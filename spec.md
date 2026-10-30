@@ -1,5 +1,7 @@
 # slr-writing-be spec
 
+> **Cập nhật 2026-10-30:** trạng thái hiện tại, kiến trúc, API, quy trình và lộ trình nằm ở `docs/PROJECT_GUIDE.md`. Phần dưới đây là bản chụp lúc repo mới khởi tạo và đã cũ ở các mục về trạng thái.
+>
 > Đọc file này trước khi đọc code. Snapshot 2026-10-30: repo mới khởi tạo (nhánh `dev`), chưa có logic nghiệp vụ. Code lệch spec thì code đúng.
 
 ---
