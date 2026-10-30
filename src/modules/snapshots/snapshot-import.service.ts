@@ -9,7 +9,7 @@ export const IMPORT_METHOD = 'slr-be-adapter@1';
 
 export class SnapshotNotReadyError extends AppError {
   constructor(public readonly report: ReadinessReport) {
-    super('The run has blocking issues and cannot be imported', 422, 'SNAPSHOT_NOT_READY');
+    super('The run has blocking issues and cannot be imported', 422, 'SNAPSHOT_NOT_READY', true, report);
   }
 }
 

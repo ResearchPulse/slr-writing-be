@@ -13,4 +13,12 @@ describe('GET /api/health', () => {
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
   });
+
+  it('documents the project and snapshot routes in the OpenAPI document', async () => {
+    const res = await request(createApp()).get('/api-docs.json');
+    expect(res.status).toBe(200);
+    expect(Object.keys(res.body.paths)).toEqual(expect.arrayContaining([
+      '/api/projects', '/api/projects/{projectId}/snapshots', '/api/projects/{projectId}/snapshots/{snapshotId}',
+    ]));
+  });
 });

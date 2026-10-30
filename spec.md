@@ -53,6 +53,8 @@ src/
 ├─ shared/           errors/app-error.ts, types/common.types.ts
 └─ modules/
    ├─ health/        GET /api/health (đã có)
+   ├─ projects/      CRUD tối thiểu, chủ sở hữu theo uid; mount snapshots dưới /projects/:projectId/snapshots
+   ├─ snapshots/     slr-source.schemas (hợp đồng đầu vào), snapshot-readiness (hàm thuần), snapshot-import.service, routes
    └─ snapshots, evidence, journal-profiles, manuscripts, verification, export, jobs, llm   (thư mục trống)
 tests/               health.test.ts
 docs/                tài liệu thiết kế
@@ -65,21 +67,22 @@ Quy ước theo `slr-be`: file `<module>.routes.ts` / `.controller.ts` / `.servi
 - Thành công: `{ success: true, data }`. Lỗi: `{ success: false, error: { code, message, requestId } }`.
 - Lỗi nghiệp vụ ném `AppError` (hoặc `NotFoundError`, `BadRequestError`, ...), `errorHandler` chuyển thành response.
 - Input validate bằng `validate(z.object({ body, query, params }))`.
+- Auth: `requireAuth` từ chối mặc định. Chỉ có dev auth (không chạy khi `NODE_ENV=production`) và điểm cắm `setTokenVerifier` cho Firebase sau này. Dự án của người khác trả 404, không trả 403.
 - Prefix: `/api`. Cổng mặc định: `5100`. Swagger: `/api-docs`.
 
 Roadmap đề xuất `/api/v1` và envelope `{data, meta}`. Repo hiện dùng envelope của `slr-be` để đồng nhất với hệ thống SLR. Nếu đổi thì ghi vào ADR.
 
 ## 6. Biến môi trường
 
-`NODE_ENV`, `PORT` (5100), `LOG_LEVEL`, `LOG_PRETTY`, `FRONTEND_URL` (CORS, cách nhau bằng dấu phẩy), `SLR_API_BASE_URL` (mặc định `http://localhost:5000`), `DATABASE_URL` (Postgres). Xem `.env.example`.
+`NODE_ENV`, `PORT` (5100), `LOG_LEVEL`, `LOG_PRETTY`, `FRONTEND_URL` (CORS, cách nhau bằng dấu phẩy), `SLR_API_BASE_URL` (mặc định `http://localhost:5000`), `DATABASE_URL` (Postgres), `DEV_AUTH_ENABLED`, `DEV_AUTH_UID`, `DEV_AUTH_EMAIL` (xác thực dev, bỏ qua khi production), `JSON_BODY_LIMIT`. Xem `.env.example`.
 
 ## 7. Trạng thái triển khai theo roadmap
 
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 0 | Khảo sát repo, xác minh output của SLR, chốt MVP, quy ước API | Chưa làm (mới có bộ khung) |
-| 1 | Schema chuẩn, DB, ReviewSnapshot, validation | Schema, migration, service import snapshot (idempotent) và kiểm tra readiness đã xong. Chưa có API HTTP cho import |
-| 2 | Adapter SLR, Evidence Registry, source anchor | Adapter đầu vào, readiness và import đã xong (fixture synthetic). Chưa có API HTTP, chưa có client gọi slr-be |
+| 1 | Schema chuẩn, DB, ReviewSnapshot, validation | Schema, migration, service import snapshot (idempotent) và kiểm tra readiness đã xong. Đã có API import, validate, xem snapshot (xác thực dev). Chưa nối xác thực Firebase |
+| 2 | Adapter SLR, Evidence Registry, source anchor | Adapter đầu vào, readiness và import đã xong (fixture synthetic). API đã có; frontend phải tự gọi slr-be rồi gửi body cho backend Writing (ADR-001) |
 | 3 | Tích hợp SAPEA (argument graph) | Chưa làm, có thể cắt khỏi MVP |
 | 4 | Writing engine (LLMProvider, outline, ParagraphPlan, draft) | Chưa làm |
 | 5 | Citation, verification, quality gate, export | Chưa làm |

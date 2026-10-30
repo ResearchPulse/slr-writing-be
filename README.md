@@ -58,6 +58,23 @@ Sau khi chạy:
 - Swagger UI: http://localhost:5100/api-docs
 - OpenAPI JSON: http://localhost:5100/api-docs.json
 
+## API hiện có
+
+Prefix `/api`. Chi tiết trong Swagger. Mọi route (trừ `/api/health`) cần xác thực.
+
+| Method | Đường dẫn | Mục đích |
+|---|---|---|
+| POST, GET | `/projects` | Tạo, liệt kê dự án của người dùng |
+| GET | `/projects/:projectId` | Chi tiết một dự án (dự án của người khác trả 404) |
+| POST | `/projects/:projectId/snapshots/validate` | Kiểm tra một run của `slr-be` có đủ điều kiện viết không, không lưu gì |
+| POST | `/projects/:projectId/snapshots` | Import run thành snapshot. 201 mới, 200 đã import trước đó, 422 nếu có lỗi chặn |
+| GET | `/projects/:projectId/snapshots` | Danh sách snapshot |
+| GET | `/projects/:projectId/snapshots/:snapshotId` | Chi tiết, số dòng dữ liệu, trạng thái artifact, danh sách cảnh báo |
+
+Body của `validate` và import là `{ run, corpus, artifacts }` lấy từ API của `slr-be` (xem `docs/slr-be-survey.md`).
+
+**Xác thực:** hiện chỉ có xác thực dev (`DEV_AUTH_ENABLED=true`, không chạy được ở production). Xác minh token Firebase của `slr-be` (ADR-001) chưa được nối. Khi chưa có xác thực hợp lệ, mọi request bị từ chối (401).
+
 ## Biến môi trường
 
 Xem `.env.example`.
@@ -70,6 +87,9 @@ Xem `.env.example`.
 | `LOG_PRETTY` | `true` khi development | Log dễ đọc cho môi trường dev |
 | `FRONTEND_URL` | `http://localhost:5173,http://localhost:3000` | Danh sách origin được phép (CORS), cách nhau bằng dấu phẩy |
 | `SLR_API_BASE_URL` | `http://localhost:5000` | Địa chỉ backend `slr-be` |
+| `DEV_AUTH_ENABLED` | `false` | Bật xác thực dev. Bị bỏ qua khi `NODE_ENV=production` |
+| `DEV_AUTH_UID` | `dev_user` | Người dùng mặc định của xác thực dev. Header `X-Dev-User-Id` ghi đè để thử nhiều người dùng |
+| `JSON_BODY_LIMIT` | `50mb` | Kích thước tối đa của body JSON (corpus của `slr-be` có thể lớn) |
 | `DATABASE_URL` | `postgresql://slr_writing:slr_writing@localhost:5433/slr_writing?schema=public` | Chuỗi kết nối PostgreSQL, khớp với `docker-compose.yml` |
 
 Không commit file `.env`.
@@ -98,12 +118,13 @@ src/
 ├─ server.ts         Khởi động server, tắt an toàn khi nhận SIGTERM/SIGINT
 ├─ routes.ts         Gom route của các module dưới /api
 ├─ config/           env (zod), logger, openapi
-├─ middleware/       error, request-logger, validation
+├─ middleware/       auth, error, request-logger, validation
 ├─ generated/        Prisma Client sinh tự động (không commit)
 ├─ shared/           error dùng chung, type dùng chung
 └─ modules/
    ├─ health/            Health check (đã có)
-   ├─ snapshots/         Snapshot và kiểm tra readiness của review
+   ├─ projects/          Dự án viết, gắn với một project SLR (đã có)
+   ├─ snapshots/         Import run từ slr-be, readiness, snapshot (đã có)
    ├─ evidence/          Study, finding, evidence, source anchor
    ├─ journal-profiles/  Yêu cầu của tạp chí
    ├─ manuscripts/       Bản thảo, outline, paragraph plan, draft
