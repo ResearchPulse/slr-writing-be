@@ -12,6 +12,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(5100),
   FRONTEND_URL: z.string().default('http://localhost:5173,http://localhost:3000'),
   SLR_API_BASE_URL: z.string().url().default('http://localhost:5000'),
+  SLR_API_MAX_RESPONSE_BYTES: z.coerce.number().int().positive().default(50 * 1024 * 1024),
+  SLR_API_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
   // Development-only auth. It is ignored in production, so a missing deployment setting can never open the API.
   DEV_AUTH_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   DEV_AUTH_UID: z.string().default('dev_user'),

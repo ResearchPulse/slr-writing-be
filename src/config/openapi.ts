@@ -39,6 +39,15 @@ export const openApiDocument: OpenAPIV3.Document = {
         responses: { '200': { description: 'Readiness report' }, '400': { description: 'INVALID_IMPORT_INPUT' }, '404': { description: 'PROJECT_NOT_FOUND' } },
       },
     },
+    '/api/projects/{projectId}/snapshots/from-slr': {
+      post: {
+        tags: ['Snapshots'], summary: 'Fetch a run from slr-be with the caller token and import it as a snapshot',
+        description: 'Body: {runId}. The run is read from the SLR project linked to this project, using the same Authorization header. Same results as importing by hand (201, 200, 422). Upstream failures: 401 SLR_AUTH_REJECTED, 403 SLR_FORBIDDEN, 404 SLR_NOT_FOUND, 502 SLR_UNREACHABLE, SLR_UPSTREAM_ERROR or SLR_INVALID_RESPONSE, 504 SLR_TIMEOUT.',
+        parameters: [{ name: 'projectId', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['runId'], properties: { runId: { type: 'string' } } } } } },
+        responses: { '200': { description: 'Already imported' }, '201': { description: 'Imported' }, '400': { description: 'INVALID_RUN_ID or RUN_PROJECT_MISMATCH' }, '404': { description: 'PROJECT_NOT_FOUND or SLR_NOT_FOUND' }, '422': { description: 'SNAPSHOT_NOT_READY' }, '502': { description: 'slr-be failed' }, '504': { description: 'slr-be timed out' } },
+      },
+    },
     '/api/projects/{projectId}/snapshots': {
       post: {
         tags: ['Snapshots'], summary: 'Import a slr-be run as an immutable snapshot',

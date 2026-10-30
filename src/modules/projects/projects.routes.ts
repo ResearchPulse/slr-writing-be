@@ -12,7 +12,8 @@ router.use(requireAuth);
 const createSchema = z.object({
   body: z.object({
     name: z.string().trim().min(1).max(200),
-    slrProjectId: z.string().trim().min(1).max(200),
+    // "." and ".." would be resolved as path segments when used in a URL.
+    slrProjectId: z.string().trim().min(1).max(200).refine((value) => !/^\.+$/.test(value), 'Invalid SLR project id'),
   }),
 });
 

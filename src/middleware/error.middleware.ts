@@ -26,6 +26,15 @@ export const errorHandler = (err: Error | AppError, req: Request, res: Response,
     });
   }
 
+  // Malformed JSON and oversized bodies come from body-parser as plain errors with a status.
+  const bodyError = err as Error & { type?: string; status?: number };
+  if (bodyError.type === 'entity.parse.failed') {
+    return res.status(400).json({ success: false, error: { code: 'INVALID_JSON', message: 'The request body is not valid JSON', requestId: req.id } });
+  }
+  if (bodyError.type === 'entity.too.large') {
+    return res.status(413).json({ success: false, error: { code: 'PAYLOAD_TOO_LARGE', message: 'The request body is too large', requestId: req.id } });
+  }
+
   const isDev = env.NODE_ENV === 'development';
   return res.status(500).json({
     success: false,
