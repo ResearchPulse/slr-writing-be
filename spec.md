@@ -39,7 +39,7 @@ Tài liệu thiết kế đầy đủ: `docs/SLR_AI_Writing_Implementation_Roadm
 
 **Chưa chốt:** nhà cung cấp LLM, hàng đợi job.
 
-**Lưu ý Prisma 7:** khi thêm model đầu tiên cần cài thêm driver adapter (`@prisma/adapter-pg`) và khởi tạo `PrismaClient` với adapter đó.
+**Prisma 7:** dùng driver adapter `@prisma/adapter-pg`; client dùng chung ở `src/config/prisma.ts`. Schema Phase 1 (snapshot, study, evidence, claim, artifact, provenance) ở `prisma/schema.prisma`, thiết kế theo ADR-005. `ProvenanceEvent` chỉ ghi thêm (trigger trong migration chặn UPDATE và DELETE).
 
 ## 4. Cấu trúc
 
@@ -78,7 +78,7 @@ Roadmap đề xuất `/api/v1` và envelope `{data, meta}`. Repo hiện dùng en
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 0 | Khảo sát repo, xác minh output của SLR, chốt MVP, quy ước API | Chưa làm (mới có bộ khung) |
-| 1 | Schema chuẩn, DB, ReviewSnapshot, validation | Chưa làm |
+| 1 | Schema chuẩn, DB, ReviewSnapshot, validation | Schema và migration đầu tiên đã xong. Chưa có service import snapshot và validation readiness |
 | 2 | Adapter SLR, Evidence Registry, source anchor | Chưa làm |
 | 3 | Tích hợp SAPEA (argument graph) | Chưa làm, có thể cắt khỏi MVP |
 | 4 | Writing engine (LLMProvider, outline, ParagraphPlan, draft) | Chưa làm |

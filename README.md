@@ -111,7 +111,7 @@ src/
    ├─ export/            Xuất bản thảo và audit
    ├─ jobs/              Quản lý job chạy dài
    └─ llm/               Lớp trừu tượng gọi LLM
-prisma/               schema.prisma và migrations (chưa có model, thiết kế ở Phase 1)
+prisma/               schema.prisma và migrations (schema snapshot Phase 1)
 prisma.config.ts      Cấu hình Prisma (URL kết nối)
 docker-compose.yml    PostgreSQL cho môi trường dev
 tests/                Test (vitest)
