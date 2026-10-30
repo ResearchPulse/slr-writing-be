@@ -1,5 +1,10 @@
-// Schema chưa có model nào. Các bảng được thiết kế ở Phase 1, dựa trên output thực của slr-be.
+// Schema Phase 1: snapshot bất biến của một run SLR (xem docs/adr/ADR-005-source-of-truth.md).
 // Prisma 7: URL kết nối nằm trong prisma.config.ts, không nằm ở đây.
+//
+// Quy ước:
+// - `externalId` là ID gốc của slr-be (study_id, finding_id, evidence_id, claim_id, rq_id). Duy nhất trong một snapshot.
+// - Dữ liệu con của ReviewSnapshot chỉ được ghi lúc import, sau đó không sửa. Tầng service giữ quy tắc này.
+// - ExtractedFinding là "finding" của slr-be (giá trị trích xuất). Kết luận tổng hợp là Claim (theme).
 
 generator client {
   provider = "prisma-client"
@@ -8,4 +13,279 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+enum SnapshotStatus {
+  IMPORTED
+  READY
+  BLOCKED
+  STALE
+}
+
+enum ArtifactType {
+  A1
+  A2
+  A3
+  A4
+  A5
+  A6
+  A7
+  A8
+  A9
+  A10
+}
+
+enum ArtifactReviewStatus {
+  unreviewed
+  needs_human_review
+  approved
+  rejected
+}
+
+enum ArtifactValidationStatus {
+  valid
+  invalid
+  not_applicable
+}
+
+enum ThemeLinkStatus {
+  resolved
+  resolved_not_reported
+  unresolved
+}
+
+enum ValueDrift {
+  unchanged
+  changed
+  unknown
+}
+
+enum ConsensusMatch {
+  match
+  mismatch
+  unknown
+}
+
+/// Không gian làm việc của người dùng trong hệ thống Writing, gắn với một project SLR ở slr-be.
+model Project {
+  id           String            @id @default(uuid())
+  name         String
+  /// uid Firebase của chủ sở hữu
+  ownerId      String
+  /// ID project trong slr-be
+  slrProjectId String
+  createdAt    DateTime          @default(now())
+  snapshots    ReviewSnapshot[]
+  provenance   ProvenanceEvent[]
+
+  @@unique([ownerId, slrProjectId])
+}
+
+/// Bản sao bất biến của một run SLR. Import lại cùng run và cùng corpusHash thì không tạo bản mới.
+model ReviewSnapshot {
+  id               String         @id @default(uuid())
+  projectId        String
+  project          Project        @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  sourceSystem     String         @default("slr-be")
+  sourceRunId      String
+  corpusHash       String
+  corpusVersion    String
+  generatorVersion String
+  /// Phiên bản schema của snapshot trong hệ thống này
+  schemaVersion    String         @default("1.0")
+  status           SnapshotStatus @default(IMPORTED)
+  /// SHA-256 của nội dung đã import, dùng kiểm tra toàn vẹn
+  integrityHash    String
+  importedBy       String
+  importedAt       DateTime       @default(now())
+  /// Các vấn đề của corpus (corpus.issues) và kết quả readiness
+  issues           Json?
+
+  researchQuestions ResearchQuestion[]
+  studies           Study[]
+  documents         SourceDocument[]
+  findings          ExtractedFinding[]
+  evidence          Evidence[]
+  claims            Claim[]
+  artifacts         SnapshotArtifact[]
+  provenance        ProvenanceEvent[]
+
+  @@unique([projectId, sourceRunId, corpusHash])
+  @@index([projectId])
+}
+
+model ResearchQuestion {
+  id         String         @id @default(uuid())
+  snapshotId String
+  snapshot   ReviewSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  externalId String
+  code       String?
+  text       String
+  claims     Claim[]
+
+  @@unique([snapshotId, externalId])
+}
+
+model Study {
+  id               String             @id @default(uuid())
+  snapshotId       String
+  snapshot         ReviewSnapshot     @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  externalId       String
+  title            String
+  authors          String[]
+  year             Int?
+  /// Giữ null nếu corpus không có. Không tự bổ sung DOI.
+  doi              String?
+  venue            String?
+  keywords         String[]
+  extractionStatus String
+  documents        SourceDocument[]
+  findings         ExtractedFinding[]
+  evidence         Evidence[]
+  claimItems       ClaimItem[]
+
+  @@unique([snapshotId, externalId])
+  @@index([snapshotId])
+}
+
+model SourceDocument {
+  id              String         @id @default(uuid())
+  snapshotId      String
+  snapshot        ReviewSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  studyId         String
+  study           Study          @relation(fields: [studyId], references: [id], onDelete: Restrict)
+  externalId      String
+  kind            String
+  sourceRevisions String[]
+  sourceHashes    String[]
+  evidence        Evidence[]
+
+  @@unique([snapshotId, externalId])
+}
+
+/// Giá trị trích xuất theo consensus của reviewer (không phải trích dẫn nguyên văn).
+model ExtractedFinding {
+  id            String            @id @default(uuid())
+  snapshotId    String
+  snapshot      ReviewSnapshot    @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  studyId       String
+  study         Study             @relation(fields: [studyId], references: [id], onDelete: Restrict)
+  externalId    String
+  fieldId       String
+  fieldName     String
+  sectionName   String
+  role          String?
+  valueText     String
+  isNotReported Boolean           @default(false)
+  evidence      EvidenceFinding[]
+  claimItems    ClaimItem[]
+
+  @@unique([snapshotId, externalId])
+  @@index([studyId])
+}
+
+/// Trích dẫn nguyên văn kèm vị trí nguồn (source anchor). Vị trí theo đoạn Markdown, không phải trang PDF.
+model Evidence {
+  id                String            @id @default(uuid())
+  snapshotId        String
+  snapshot          ReviewSnapshot    @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  studyId           String
+  study             Study             @relation(fields: [studyId], references: [id], onDelete: Restrict)
+  documentId        String
+  document          SourceDocument    @relation(fields: [documentId], references: [id], onDelete: Restrict)
+  externalId        String
+  fieldId           String
+  sourceRevision    String
+  sourceHash        String?
+  quote             String
+  quoteHash         String?
+  quoteHashVerified Boolean           @default(false)
+  page              Int?
+  section           String?
+  /// Chỉ số đoạn 0-based trong Markdown của GROBID
+  paragraph         Int?
+  tableOrFigure     String?
+  charStart         Int?
+  charEnd           Int?
+  consensusMatch    ConsensusMatch    @default(unknown)
+  findings          EvidenceFinding[]
+
+  @@unique([snapshotId, externalId])
+  @@index([studyId])
+}
+
+model EvidenceFinding {
+  evidenceId String
+  evidence   Evidence         @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
+  findingId  String
+  finding    ExtractedFinding @relation(fields: [findingId], references: [id], onDelete: Restrict)
+
+  @@id([evidenceId, findingId])
+  @@index([findingId])
+}
+
+/// Theme do nhà nghiên cứu định nghĩa trong slr-be. Đây là nguồn của SynthesisFinding.
+model Claim {
+  id                 String            @id @default(uuid())
+  snapshotId         String
+  snapshot           ReviewSnapshot    @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  externalId         String
+  title              String
+  description        String?
+  researchQuestionId String?
+  researchQuestion   ResearchQuestion? @relation(fields: [researchQuestionId], references: [id], onDelete: Restrict)
+  items              ClaimItem[]
+
+  @@unique([snapshotId, externalId])
+}
+
+model ClaimItem {
+  id         String            @id @default(uuid())
+  claimId    String
+  claim      Claim             @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  externalId String
+  findingId  String?
+  finding    ExtractedFinding? @relation(fields: [findingId], references: [id], onDelete: Restrict)
+  studyId    String?
+  study      Study?            @relation(fields: [studyId], references: [id], onDelete: Restrict)
+  linkStatus ThemeLinkStatus
+  valueDrift ValueDrift        @default(unknown)
+  /// Ghi chú của researcher, không phải văn bản nguồn
+  notes      String?
+
+  @@unique([claimId, externalId])
+}
+
+/// Artifact A1..A10 của run, lưu nguyên payload để dùng làm đầu vào cho bước viết.
+model SnapshotArtifact {
+  id               String                   @id @default(uuid())
+  snapshotId       String
+  snapshot         ReviewSnapshot           @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  artifactType     ArtifactType
+  artifactId       String
+  schemaVersion    String
+  contentHash      String
+  reviewStatus     ArtifactReviewStatus
+  validationStatus ArtifactValidationStatus
+  payload          Json
+
+  @@unique([snapshotId, artifactType])
+}
+
+/// Nhật ký chỉ ghi thêm. Trigger trong migration chặn UPDATE và DELETE.
+model ProvenanceEvent {
+  id         String          @id @default(uuid())
+  createdAt  DateTime        @default(now())
+  projectId  String
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  snapshotId String?
+  snapshot   ReviewSnapshot? @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  actor      String
+  activity   String
+  inputRefs  Json?
+  outputRefs Json?
+  method     String?
+  notes      String?
+
+  @@index([projectId, createdAt])
 }
