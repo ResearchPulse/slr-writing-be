@@ -1,0 +1,11 @@
+// Schema chưa có model nào. Các bảng được thiết kế ở Phase 1, dựa trên output thực của slr-be.
+// Prisma 7: URL kết nối nằm trong prisma.config.ts, không nằm ở đây.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}

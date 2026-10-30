@@ -28,25 +28,29 @@ Thiết kế chi tiết nằm trong tài liệu `SLR_AI_Writing_Implementation_R
 | Thành phần | Công nghệ |
 |---|---|
 | Runtime | Node.js 22, TypeScript (ESM, NodeNext) |
-| Web framework | Express 5 |
+| Web framework | Express 4 (cùng phiên bản với `slr-be`) |
 | Tài liệu API | Swagger UI (`swagger-ui-express`, OpenAPI 3) |
+| Database | PostgreSQL 16 (Docker) + Prisma 7 |
 | Validate | zod 3 |
 | Log | pino (tự che các trường nhạy cảm) |
 | Test | vitest, supertest |
 
-Chưa chốt: cơ sở dữ liệu (PostgreSQL hay Firestore), nhà cung cấp LLM, hàng đợi job.
+Chưa chốt: nhà cung cấp LLM, hàng đợi job.
 
-Lưu ý: `slr-be` dùng Express 4, repo này dùng Express 5. Khi chép code từ `slr-be` sang cần chú ý khác biệt (ví dụ cú pháp wildcard của route).
+Vì sao dùng PostgreSQL thay vì Firestore như `slr-be`: hệ thống cần ràng buộc khóa ngoại giữa finding, evidence, study và source anchor, snapshot bất biến, audit log chỉ ghi thêm, và truy vết ngược một câu về nguồn bằng truy vấn quan hệ. Dữ liệu từ `slr-be` được lấy qua API rồi lưu thành snapshot riêng, nên hai database không cần JOIN với nhau.
 
 ## Cài đặt và chạy
 
-Yêu cầu: Node.js 22 trở lên.
+Yêu cầu: Node.js 22 trở lên, Docker (để chạy PostgreSQL).
 
 ```bash
-npm install
+npm install              # tự chạy prisma generate
 cp .env.example .env     # chỉnh lại giá trị nếu cần
+npm run db:up            # bật PostgreSQL trong Docker (cổng 5433)
 npm run dev              # chạy ở chế độ watch, cổng 5100
 ```
+
+PostgreSQL dùng cổng máy chủ 5433 (không phải 5432) để không đụng Postgres cài sẵn trên máy. Dữ liệu được giữ trong Docker volume `slr_writing_pgdata`. Xóa luôn dữ liệu bằng `docker compose down -v`.
 
 Sau khi chạy:
 
@@ -66,6 +70,7 @@ Xem `.env.example`.
 | `LOG_PRETTY` | `true` khi development | Log dễ đọc cho môi trường dev |
 | `FRONTEND_URL` | `http://localhost:5173,http://localhost:3000` | Danh sách origin được phép (CORS), cách nhau bằng dấu phẩy |
 | `SLR_API_BASE_URL` | `http://localhost:5000` | Địa chỉ backend `slr-be` |
+| `DATABASE_URL` | `postgresql://slr_writing:slr_writing@localhost:5433/slr_writing?schema=public` | Chuỗi kết nối PostgreSQL, khớp với `docker-compose.yml` |
 
 Không commit file `.env`.
 
@@ -79,6 +84,11 @@ Không commit file `.env`.
 | `npm test` | Chạy toàn bộ test một lần |
 | `npm run test:watch` | Chạy test ở chế độ watch |
 | `npm run typecheck` | Kiểm tra kiểu, không sinh file |
+| `npm run db:up` / `db:down` | Bật / tắt PostgreSQL trong Docker |
+| `npm run db:generate` | Sinh Prisma Client vào `src/generated/prisma` (không commit) |
+| `npm run db:migrate` | Tạo và áp dụng migration ở máy dev (`prisma migrate dev`) |
+| `npm run db:deploy` | Áp dụng migration có sẵn (dùng cho CI, môi trường thật) |
+| `npm run db:studio` | Mở Prisma Studio để xem dữ liệu |
 
 ## Cấu trúc thư mục
 
@@ -89,6 +99,7 @@ src/
 ├─ routes.ts         Gom route của các module dưới /api
 ├─ config/           env (zod), logger, openapi
 ├─ middleware/       error, request-logger, validation
+├─ generated/        Prisma Client sinh tự động (không commit)
 ├─ shared/           error dùng chung, type dùng chung
 └─ modules/
    ├─ health/            Health check (đã có)
@@ -100,6 +111,9 @@ src/
    ├─ export/            Xuất bản thảo và audit
    ├─ jobs/              Quản lý job chạy dài
    └─ llm/               Lớp trừu tượng gọi LLM
+prisma/               schema.prisma và migrations (chưa có model, thiết kế ở Phase 1)
+prisma.config.ts      Cấu hình Prisma (URL kết nối)
+docker-compose.yml    PostgreSQL cho môi trường dev
 tests/                Test (vitest)
 docs/                 Tài liệu thiết kế
 ```

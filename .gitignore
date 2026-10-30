@@ -9,3 +9,5 @@ coverage/
 storage/
 .mcp.json
 AGENTS.md
+
+/src/generated/prisma

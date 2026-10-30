@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: slr-writing-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: slr_writing
+      POSTGRES_PASSWORD: slr_writing
+      POSTGRES_DB: slr_writing
+    ports:
+      - '5433:5432'
+    volumes:
+      - slr_writing_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U slr_writing -d slr_writing']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  slr_writing_pgdata:
