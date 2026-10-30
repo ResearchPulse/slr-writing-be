@@ -1,6 +1,8 @@
 import { Router, type Request } from 'express';
 import type { AuthenticatedRequest } from '../../shared/types/common.types.js';
+import { BadRequestError } from '../../shared/errors/app-error.js';
 import { getOwnedProject } from '../projects/projects.service.js';
+import { SlrClient, isValidRunId } from '../slr-client/slr-client.js';
 import { importSnapshot, validateImport } from './snapshot-import.service.js';
 import { getSnapshot, listSnapshots } from './snapshots.service.js';
 
@@ -22,6 +24,21 @@ router.use(async (req: AuthenticatedRequest, _res, next) => {
 router.post('/validate', (req, res, next) => {
   try {
     return res.json({ success: true, data: validateImport(req.body) });
+  } catch (error) { return next(error); }
+});
+
+// Pull a run straight from slr-be with the caller's own token, then import it like any other run.
+router.post('/from-slr', async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const runId: unknown = req.body?.runId;
+    if (!isValidRunId(runId)) throw new BadRequestError('runId is required and must be a valid slr-be run id', 'INVALID_RUN_ID');
+    const project = await getOwnedProject(req.user!.uid, req.params.projectId);
+    const input = await new SlrClient().fetchRun(project.slrProjectId, runId, { authorization: req.header('authorization') });
+    const result = await importSnapshot({ projectId: project.id, importedBy: req.user!.uid, input });
+    return res.status(result.created ? 201 : 200).json({
+      success: true,
+      data: { snapshot: result.snapshot, created: result.created, warnings: result.readiness.issues },
+    });
   } catch (error) { return next(error); }
 });
 
