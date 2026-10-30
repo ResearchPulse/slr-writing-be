@@ -20,7 +20,7 @@ export const createApp = () => {
     credentials: true,
     exposedHeaders: ['X-Request-Id'],
   }));
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: env.JSON_BODY_LIMIT }));
   app.use(express.urlencoded({ extended: true }));
 
   app.get('/api-docs.json', (_req, res) => res.json(openApiDocument));

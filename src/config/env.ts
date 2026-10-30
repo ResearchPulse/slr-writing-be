@@ -12,6 +12,11 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(5100),
   FRONTEND_URL: z.string().default('http://localhost:5173,http://localhost:3000'),
   SLR_API_BASE_URL: z.string().url().default('http://localhost:5000'),
+  // Development-only auth. It is ignored in production, so a missing deployment setting can never open the API.
+  DEV_AUTH_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  DEV_AUTH_UID: z.string().default('dev_user'),
+  DEV_AUTH_EMAIL: z.string().default('dev@slr-writing.local'),
+  JSON_BODY_LIMIT: z.string().default('50mb'),
   DATABASE_URL: z.string().min(1).default('postgresql://slr_writing:slr_writing@localhost:5433/slr_writing?schema=public'),
 });
 
