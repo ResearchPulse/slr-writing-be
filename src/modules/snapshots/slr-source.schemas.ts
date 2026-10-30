@@ -109,16 +109,39 @@ export const artifactPayloadSchema = z.object({
   schema_version: z.string().min(1),
 }).passthrough();
 
+/**
+ * Data slr-be does not freeze per run: the PRISMA writing export (flow counts for Methods) and the researcher answers per RQ.
+ * Both are read when importing, so the snapshot keeps its own copy.
+ */
+export const prismaWritingExportSchema = z.object({
+  schemaVersion: z.string().min(1),
+  /** Present in the real export. When it names a project, it must be the one the run belongs to. */
+  project: z.object({ id: z.string().min(1) }).passthrough().optional(),
+  flow: z.object({
+    studiesIncluded: z.number().int().nonnegative().nullable(),
+  }).passthrough(),
+  includedStudies: z.array(z.object({ id: z.string().min(1) }).passthrough()),
+}).passthrough();
+
+export const rqFindingsSchema = z.array(z.object({}).passthrough());
+
+export const supplementsSchema = z.object({
+  prisma_writing_export: prismaWritingExportSchema.optional(),
+  rq_findings: rqFindingsSchema.optional(),
+}).default({});
+
 export const importInputSchema = z.object({
   run: runSchema,
   corpus: corpusSchema,
   artifacts: z.record(artifactType, artifactPayloadSchema).default({}),
+  supplements: supplementsSchema,
 });
 
 export type Corpus = z.infer<typeof corpusSchema>;
 export type SlrRun = z.infer<typeof runSchema>;
 export type ArtifactPayload = z.infer<typeof artifactPayloadSchema>;
 export type ImportInput = z.infer<typeof importInputSchema>;
+export type Supplements = z.infer<typeof supplementsSchema>;
 export type ArtifactTypeName = z.infer<typeof artifactType>;
 
 /**

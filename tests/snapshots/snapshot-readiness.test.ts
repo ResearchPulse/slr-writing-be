@@ -68,3 +68,43 @@ describe('assessReadiness', () => {
     expect(codes(report, 'warning')).toEqual(expect.arrayContaining(['QUOTE_NOT_VERIFIED', 'EXTRACTION_INCOMPLETE', 'VALUE_DRIFT']));
   });
 });
+
+describe('supplements and evidence warnings', () => {
+  const codes = (input: any) => assessReadiness(input).issues.map((i) => i.code);
+
+  it('warns when the PRISMA export is missing, without blocking', () => {
+    const report = assessReadiness(buildSyntheticRun() as any);
+    expect(report.status).toBe('READY');
+    expect(report.issues.map((i) => i.code)).toContain('PRISMA_EXPORT_MISSING');
+  });
+
+  it('warns when the PRISMA export disagrees with the run corpus', () => {
+    const input = buildSyntheticRun() as any;
+    input.supplements = { prisma_writing_export: { schemaVersion: 'slr-prisma-writing-v1', flow: { studiesIncluded: 9 }, includedStudies: [] } };
+    expect(codes(input)).toContain('PRISMA_COUNT_MISMATCH');
+  });
+
+  it('is silent when the PRISMA export agrees', () => {
+    const input = buildSyntheticRun() as any;
+    input.supplements = { prisma_writing_export: { schemaVersion: 'slr-prisma-writing-v1', flow: { studiesIncluded: 2 }, includedStudies: [] } };
+    const found = codes(input);
+    expect(found).not.toContain('PRISMA_COUNT_MISMATCH');
+    expect(found).not.toContain('PRISMA_EXPORT_MISSING');
+  });
+
+  it('falls back to the length of includedStudies when the flow has no count', () => {
+    const input = buildSyntheticRun() as any;
+    input.supplements = { prisma_writing_export: { schemaVersion: 'v1', flow: { studiesIncluded: null }, includedStudies: [{ id: 'a' }, { id: 'b' }] } };
+    expect(codes(input)).not.toContain('PRISMA_COUNT_MISMATCH');
+  });
+
+  it('warns when there is no evidence or no claims, without blocking', () => {
+    const input = buildSyntheticRun() as any;
+    input.corpus.evidence = [];
+    input.corpus.findings.forEach((f: any) => { f.evidence_ids = []; });
+    input.corpus.claims = [];
+    const report = assessReadiness(input);
+    expect(report.status).toBe('READY');
+    expect(report.issues.map((i) => i.code)).toEqual(expect.arrayContaining(['NO_EVIDENCE', 'NO_CLAIMS']));
+  });
+});

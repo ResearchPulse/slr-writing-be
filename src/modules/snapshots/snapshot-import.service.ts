@@ -32,10 +32,36 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** Supplements join the hash only when present, so a snapshot without them keeps the hash it had before they existed. */
+const hashedContent = (input: ImportInput) =>
+  Object.keys(input.supplements).length === 0
+    ? { corpus: input.corpus, artifacts: input.artifacts }
+    : { corpus: input.corpus, artifacts: input.artifacts, supplements: input.supplements };
+
 export const computeIntegrityHash = (input: ImportInput): string =>
-  `sha256:${createHash('sha256').update(stableStringify({ corpus: input.corpus, artifacts: input.artifacts })).digest('hex')}`;
+  `sha256:${createHash('sha256').update(stableStringify(hashedContent(input))).digest('hex')}`;
+
+const MAX_DEPTH = 64;
+// A NUL or a lone surrogate cannot be stored in PostgreSQL JSON/text and would fail the whole transaction with a 500.
+const UNSTORABLE = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/** Rejects input that is nested too deeply or holds text the database cannot store, before anything is parsed or hashed. */
+function assertStorable(value: unknown, depth = 0): void {
+  if (depth > MAX_DEPTH) throw new BadRequestError('Invalid import payload: nested too deeply', 'INVALID_IMPORT_INPUT');
+  if (typeof value === 'string') {
+    if (UNSTORABLE.test(value)) throw new BadRequestError('Invalid import payload: contains a character that cannot be stored', 'INVALID_IMPORT_INPUT');
+  } else if (Array.isArray(value)) {
+    for (const item of value) assertStorable(item, depth + 1);
+  } else if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      assertStorable(key, depth + 1);
+      assertStorable(item, depth + 1);
+    }
+  }
+}
 
 function parseInput(raw: unknown): ImportInput {
+  assertStorable(raw);
   const parsed = importInputSchema.safeParse(raw);
   if (!parsed.success) {
     const detail = parsed.error.issues.slice(0, 5).map((issue) => `${issue.path.join('.') || 'input'}: ${issue.message}`).join('; ');
@@ -54,9 +80,17 @@ const json = (value: unknown) => value as Prisma.InputJsonValue;
 /**
  * Stores one slr-be run as an immutable snapshot (ADR-005).
  * - A run with blocking issues is rejected and nothing is stored.
- * - Importing the same run with the same corpus hash again returns the existing snapshot.
+ * - Importing the same content again (same run, corpus hash and integrity hash) returns the existing snapshot.
+ * - The same run with different content, such as a changed PRISMA export, becomes a new snapshot.
  */
-export async function importSnapshot(params: { projectId: string; importedBy: string; input: unknown }): Promise<ImportResult> {
+export async function importSnapshot(params: {
+  projectId: string;
+  importedBy: string;
+  input: unknown;
+  /** 'slr-be' only when this service fetched the run itself; anything a client posted is 'manual' and makes no provenance claim. */
+  source?: 'slr-be' | 'manual';
+}): Promise<ImportResult> {
+  const source = params.source ?? 'manual';
   const project = await prisma.project.findUnique({ where: { id: params.projectId } });
   if (!project) throw new NotFoundError('Project not found', 'PROJECT_NOT_FOUND');
 
@@ -68,14 +102,17 @@ export async function importSnapshot(params: { projectId: string; importedBy: st
   const readiness = assessReadiness(input);
   if (readiness.status === 'BLOCKED') throw new SnapshotNotReadyError(readiness);
 
+  const integrityHash = computeIntegrityHash(input);
   const where = {
-    projectId_sourceRunId_corpusHash: { projectId: project.id, sourceRunId: input.run.run_id, corpusHash: input.corpus.corpus_hash },
+    projectId_sourceSystem_sourceRunId_corpusHash_integrityHash: {
+      projectId: project.id, sourceSystem: source, sourceRunId: input.run.run_id, corpusHash: input.corpus.corpus_hash, integrityHash,
+    },
   };
   const existing = await prisma.reviewSnapshot.findUnique({ where });
   if (existing) return { snapshot: existing, created: false, readiness };
 
   try {
-    const snapshot = await prisma.$transaction((tx) => store(tx, project.id, params.importedBy, input, readiness), { timeout: 60_000 });
+    const snapshot = await prisma.$transaction((tx) => store(tx, project.id, params.importedBy, input, readiness, source, integrityHash), { timeout: 60_000 });
     return { snapshot, created: true, readiness };
   } catch (error) {
     // Two imports of the same run can race; the unique key makes the loser read the winner's snapshot.
@@ -93,6 +130,8 @@ async function store(
   importedBy: string,
   input: ImportInput,
   readiness: ReadinessReport,
+  source: 'slr-be' | 'manual',
+  integrityHash: string,
 ): Promise<ReviewSnapshot> {
   const { run, corpus } = input;
   const snapshot = await tx.reviewSnapshot.create({
@@ -102,8 +141,9 @@ async function store(
       corpusHash: corpus.corpus_hash,
       corpusVersion: corpus.corpus_version,
       generatorVersion: run.generator_version,
+      sourceSystem: source,
       status: 'READY',
-      integrityHash: computeIntegrityHash(input),
+      integrityHash,
       importedBy,
       issues: json(readiness.issues),
     },
@@ -200,9 +240,16 @@ async function store(
     }),
   });
 
+  await tx.snapshotSupplement.createMany({
+    data: Object.entries(input.supplements).flatMap(([kind, payload]) => payload === undefined ? [] : [{
+      snapshotId, kind, schemaVersion: (payload as { schemaVersion?: string }).schemaVersion ?? null,
+      contentHash: `sha256:${createHash('sha256').update(stableStringify(payload)).digest('hex')}`, payload: json(payload),
+    }]),
+  });
+
   await tx.provenanceEvent.create({
     data: {
-      projectId, snapshotId, actor: importedBy, activity: 'snapshot.import', method: IMPORT_METHOD,
+      projectId, snapshotId, actor: importedBy, activity: 'snapshot.import', method: source === 'slr-be' ? IMPORT_METHOD : `${IMPORT_METHOD}:manual`,
       inputRefs: json({ sourceRunId: run.run_id, corpusHash: corpus.corpus_hash, sourceProjectId: run.project_id }),
       outputRefs: json({ snapshotId }),
       notes: `${readiness.issues.length} warning(s)`,

@@ -108,9 +108,11 @@ model ReviewSnapshot {
   evidence          Evidence[]
   claims            Claim[]
   artifacts         SnapshotArtifact[]
+  supplements       SnapshotSupplement[]
   provenance        ProvenanceEvent[]
 
-  @@unique([projectId, sourceRunId, corpusHash])
+  // Same run and corpus but different content (for example a changed PRISMA export), or a different source (fetched vs posted by hand), is a different snapshot.
+  @@unique([projectId, sourceSystem, sourceRunId, corpusHash, integrityHash])
   @@index([projectId])
 }
 
@@ -270,6 +272,21 @@ model SnapshotArtifact {
   payload          Json
 
   @@unique([snapshotId, artifactType])
+}
+
+/// Dữ liệu bổ sung ngoài run, lấy từ slr-be lúc import (PRISMA writing export, câu trả lời theo RQ).
+/// slr-be không đóng băng các dữ liệu này theo run, nên snapshot giữ bản sao tại thời điểm import (ADR-005).
+model SnapshotSupplement {
+  id            String         @id @default(uuid())
+  snapshotId    String
+  snapshot      ReviewSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  /// 'prisma_writing_export' hoặc 'rq_findings'
+  kind          String
+  schemaVersion String?
+  contentHash   String
+  payload       Json
+
+  @@unique([snapshotId, kind])
 }
 
 /// Nhật ký chỉ ghi thêm. Trigger trong migration chặn UPDATE và DELETE.
