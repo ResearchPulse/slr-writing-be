@@ -28,13 +28,18 @@ Tài liệu thiết kế đầy đủ: `docs/SLR_AI_Writing_Implementation_Roadm
 |---|---|
 | Runtime | Node.js 22, TypeScript, ESM (NodeNext) |
 | Framework | Express 4 (cùng phiên bản với `slr-be`) |
+| Database | PostgreSQL 16 (Docker, cổng 5433) + Prisma 7. `prisma/schema.prisma` chưa có model; cấu hình URL ở `prisma.config.ts`; client sinh vào `src/generated/prisma` (gitignored) |
 | Validate | zod 3 |
 | Log | pino |
 | API docs | `swagger-ui-express`, tài liệu OpenAPI viết tay ở `src/config/openapi.ts` |
 | Test | vitest, supertest (`tests/**/*.test.ts`) |
-| CI | GitHub Actions: `.github/workflows/ci.yml` (typecheck, test, build) cho PR và push vào `dev`, `main` |
+| CI | GitHub Actions: `.github/workflows/ci.yml` (prisma validate, migrate deploy, typecheck, test, build; có service Postgres) cho PR và push vào `dev`, `main` |
 
-**Chưa chốt:** database (PostgreSQL theo đề xuất của roadmap, hoặc Firestore như `slr-be`), ORM, nhà cung cấp LLM, hàng đợi job. Phải chốt database trước Phase 1.
+**Đã chốt (2026-10-30):** PostgreSQL + Prisma, không dùng Firestore như `slr-be`. Lý do: cần FK giữa finding/evidence/study/anchor, snapshot bất biến, audit append-only, truy vết lineage bằng truy vấn quan hệ. Dữ liệu từ `slr-be` lấy qua API rồi lưu thành snapshot riêng.
+
+**Chưa chốt:** nhà cung cấp LLM, hàng đợi job.
+
+**Lưu ý Prisma 7:** khi thêm model đầu tiên cần cài thêm driver adapter (`@prisma/adapter-pg`) và khởi tạo `PrismaClient` với adapter đó.
 
 ## 4. Cấu trúc
 
@@ -66,7 +71,7 @@ Roadmap đề xuất `/api/v1` và envelope `{data, meta}`. Repo hiện dùng en
 
 ## 6. Biến môi trường
 
-`NODE_ENV`, `PORT` (5100), `LOG_LEVEL`, `LOG_PRETTY`, `FRONTEND_URL` (CORS, cách nhau bằng dấu phẩy), `SLR_API_BASE_URL` (mặc định `http://localhost:5000`). Xem `.env.example`.
+`NODE_ENV`, `PORT` (5100), `LOG_LEVEL`, `LOG_PRETTY`, `FRONTEND_URL` (CORS, cách nhau bằng dấu phẩy), `SLR_API_BASE_URL` (mặc định `http://localhost:5000`), `DATABASE_URL` (Postgres). Xem `.env.example`.
 
 ## 7. Trạng thái triển khai theo roadmap
 
@@ -85,7 +90,6 @@ Thứ tự khuyến nghị: làm một lát cắt dọc cho một đoạn văn (
 
 ## 8. Quyết định còn mở
 
-- Database và ORM.
 - Nhà cung cấp LLM (qua interface `LLMProvider` để đổi được).
 - Cách lấy dữ liệu từ `slr-be`: gọi API nội bộ hay đọc file export. Cần xác minh output thực của `slr-be` (artifacts A1–A10 nằm ở `slr-be/src/modules/slr-artifacts`).
 - Loại bài và Journal Profile cho MVP, định dạng output đầu tiên (Markdown hay DOCX).
