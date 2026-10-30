@@ -24,6 +24,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: slr_writing
+          POSTGRES_PASSWORD: slr_writing
+          POSTGRES_DB: slr_writing
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U slr_writing -d slr_writing"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://slr_writing:slr_writing@localhost:5433/slr_writing?schema=public
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,6 +54,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Validate Prisma schema
+        run: npx prisma validate
+
+      - name: Apply database migrations
+        run: npx prisma migrate deploy
 
       - name: Typecheck
         run: npm run typecheck
