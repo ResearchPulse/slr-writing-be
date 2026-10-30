@@ -78,8 +78,8 @@ Roadmap đề xuất `/api/v1` và envelope `{data, meta}`. Repo hiện dùng en
 | Phase | Nội dung | Trạng thái |
 |---|---|---|
 | 0 | Khảo sát repo, xác minh output của SLR, chốt MVP, quy ước API | Chưa làm (mới có bộ khung) |
-| 1 | Schema chuẩn, DB, ReviewSnapshot, validation | Schema và migration đầu tiên đã xong. Chưa có service import snapshot và validation readiness |
-| 2 | Adapter SLR, Evidence Registry, source anchor | Chưa làm |
+| 1 | Schema chuẩn, DB, ReviewSnapshot, validation | Schema, migration, service import snapshot (idempotent) và kiểm tra readiness đã xong. Chưa có API HTTP cho import |
+| 2 | Adapter SLR, Evidence Registry, source anchor | Adapter đầu vào, readiness và import đã xong (fixture synthetic). Chưa có API HTTP, chưa có client gọi slr-be |
 | 3 | Tích hợp SAPEA (argument graph) | Chưa làm, có thể cắt khỏi MVP |
 | 4 | Writing engine (LLMProvider, outline, ParagraphPlan, draft) | Chưa làm |
 | 5 | Citation, verification, quality gate, export | Chưa làm |

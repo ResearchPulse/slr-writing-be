@@ -1,0 +1,127 @@
+import type { ImportInput } from './slr-source.schemas.js';
+
+export type ReadinessSeverity = 'blocking' | 'warning';
+
+export interface ReadinessIssue {
+  code: string;
+  severity: ReadinessSeverity;
+  message: string;
+  ref?: string;
+}
+
+export interface ReadinessReport {
+  /** READY only when there is no blocking issue. Warnings do not block. */
+  status: 'READY' | 'BLOCKED';
+  issues: ReadinessIssue[];
+}
+
+/** MVP reads Results from A1 and Methods/PRISMA from A10 (docs/mvp-scope.md), so they must be usable. */
+const REQUIRED_ARTIFACTS = ['A1', 'A10'] as const;
+/** Describe the corpus (A2) and feed Discussion (A7). Missing ones weaken the paper but do not stop it. */
+const OPTIONAL_ARTIFACTS = ['A2', 'A7'] as const;
+
+/**
+ * Decides whether an imported run is complete and consistent enough to write from.
+ * Missing data is reported, never filled in. Pure function: no I/O.
+ */
+export function assessReadiness(input: ImportInput): ReadinessReport {
+  const issues: ReadinessIssue[] = [];
+  const block = (code: string, message: string, ref?: string) => issues.push({ code, severity: 'blocking', message, ref });
+  const warn = (code: string, message: string, ref?: string) => issues.push({ code, severity: 'warning', message, ref });
+  const { run, corpus } = input;
+
+  if (run.corpus_hash !== corpus.corpus_hash) {
+    block('CORPUS_HASH_MISMATCH', 'The run and the corpus carry different corpus hashes', run.run_id);
+  }
+  if (corpus.research_questions.length === 0) block('NO_RESEARCH_QUESTIONS', 'The review has no research questions');
+  if (corpus.studies.length === 0) block('NO_STUDIES', 'The corpus has no included studies');
+
+  for (const type of REQUIRED_ARTIFACTS) {
+    const summary = run.artifacts.find((artifact) => artifact.artifact_type === type);
+    if (!summary) {
+      block('ARTIFACT_MISSING', `Required artifact ${type} is not part of the run`, type);
+    } else if (summary.validation_status === 'invalid') {
+      block('ARTIFACT_INVALID', `Artifact ${type} failed validation`, type);
+    } else if (summary.review_status === 'rejected') {
+      block('ARTIFACT_REJECTED', `Artifact ${type} was rejected by a reviewer`, type);
+    } else if (summary.review_status !== 'approved') {
+      block('ARTIFACT_NOT_APPROVED', `Artifact ${type} is ${summary.review_status}, not approved`, type);
+    } else if (!input.artifacts[type]) {
+      block('ARTIFACT_PAYLOAD_MISSING', `Artifact ${type} is listed in the run but its content was not supplied`, type);
+    }
+  }
+  for (const type of OPTIONAL_ARTIFACTS) {
+    const summary = run.artifacts.find((artifact) => artifact.artifact_type === type);
+    if (!summary || !input.artifacts[type]) warn('OPTIONAL_ARTIFACT_MISSING', `Optional artifact ${type} is not available`, type);
+    else if (summary.validation_status === 'invalid' || summary.review_status !== 'approved') {
+      warn('OPTIONAL_ARTIFACT_NOT_USABLE', `Optional artifact ${type} is ${summary.review_status} / ${summary.validation_status}`, type);
+    }
+  }
+
+  // Referential integrity: the adapter must be able to link every row it stores.
+  const studyIds = new Set(corpus.studies.map((study) => study.study_id));
+  const documentIds = new Set(corpus.documents.map((document) => document.document_id));
+  const findingIds = new Set(corpus.findings.map((finding) => finding.finding_id));
+  const evidenceIds = new Set(corpus.evidence.map((evidence) => evidence.evidence_id));
+  const rqIds = new Set(corpus.research_questions.map((rq) => rq.rq_id));
+
+  const duplicates = (values: string[]) => values.filter((value, index) => values.indexOf(value) !== index);
+  for (const [label, ids] of [
+    ['study', corpus.studies.map((s) => s.study_id)],
+    ['document', corpus.documents.map((d) => d.document_id)],
+    ['finding', corpus.findings.map((f) => f.finding_id)],
+    ['evidence', corpus.evidence.map((e) => e.evidence_id)],
+    ['claim', corpus.claims.map((c) => c.claim_id)],
+    ['research question', corpus.research_questions.map((q) => q.rq_id)],
+  ] as const) {
+    for (const id of new Set(duplicates([...ids]))) block('DUPLICATE_ID', `Duplicate ${label} id`, id);
+  }
+
+  for (const document of corpus.documents) {
+    if (!studyIds.has(document.study_id)) block('UNKNOWN_STUDY', 'Document points to an unknown study', document.document_id);
+  }
+  for (const finding of corpus.findings) {
+    if (!studyIds.has(finding.study_id)) block('UNKNOWN_STUDY', 'Finding points to an unknown study', finding.finding_id);
+    for (const id of finding.evidence_ids) {
+      if (!evidenceIds.has(id)) block('UNKNOWN_EVIDENCE', 'Finding points to unknown evidence', `${finding.finding_id} -> ${id}`);
+    }
+  }
+  for (const evidence of corpus.evidence) {
+    if (!studyIds.has(evidence.study_id)) block('UNKNOWN_STUDY', 'Evidence points to an unknown study', evidence.evidence_id);
+    if (!documentIds.has(evidence.document_id)) block('UNKNOWN_DOCUMENT', 'Evidence points to an unknown document', evidence.evidence_id);
+    for (const id of evidence.finding_ids) {
+      if (!findingIds.has(id)) block('UNKNOWN_FINDING', 'Evidence points to an unknown finding', `${evidence.evidence_id} -> ${id}`);
+    }
+  }
+  for (const claim of corpus.claims) {
+    if (claim.research_question_id && !rqIds.has(claim.research_question_id)) {
+      block('UNKNOWN_RESEARCH_QUESTION', 'Claim points to an unknown research question', claim.claim_id);
+    }
+    for (const item of claim.items) {
+      if (item.finding_id && !findingIds.has(item.finding_id)) {
+        block('UNKNOWN_FINDING', 'Claim item points to an unknown finding', `${claim.claim_id}/${item.item_id}`);
+      }
+      if (item.study_id && !studyIds.has(item.study_id)) {
+        block('UNKNOWN_STUDY', 'Claim item points to an unknown study', `${claim.claim_id}/${item.item_id}`);
+      }
+    }
+  }
+
+  // Quality of the evidence base: worth showing to the user, not worth blocking on.
+  for (const study of corpus.studies) {
+    if (study.extraction.status !== 'COMPLETED') warn('EXTRACTION_INCOMPLETE', 'Data extraction is not completed for this study', study.study_id);
+  }
+  for (const evidence of corpus.evidence) {
+    if (!evidence.quote_hash_verified) warn('QUOTE_NOT_VERIFIED', 'The quote hash was not verified against the source', evidence.evidence_id);
+    if (evidence.consensus_value_match === 'mismatch') warn('CONSENSUS_MISMATCH', 'The quote supports a different value than the consensus', evidence.evidence_id);
+  }
+  for (const claim of corpus.claims) {
+    for (const item of claim.items) {
+      if (item.link_status === 'unresolved') warn('CLAIM_ITEM_UNRESOLVED', 'A theme cites a value that does not resolve', `${claim.claim_id}/${item.item_id}`);
+      if (item.value_drift === 'changed') warn('VALUE_DRIFT', 'The cited value changed since the theme cited it', `${claim.claim_id}/${item.item_id}`);
+    }
+  }
+  for (const issue of corpus.issues) warn('CORPUS_ISSUE', `${issue.code}: ${issue.message}`);
+
+  return { status: issues.some((issue) => issue.severity === 'blocking') ? 'BLOCKED' : 'READY', issues };
+}
