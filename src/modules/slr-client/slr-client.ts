@@ -15,6 +15,7 @@ export const isValidRunId = (value: unknown): value is string => typeof value ==
 export interface SlrClientOptions {
   baseUrl?: string;
   timeoutMs?: number;
+  maxResponseBytes?: number;
   fetchImpl?: typeof fetch;
 }
 
@@ -32,11 +33,13 @@ const upstreamError = (status: number, code: string, message: string) => new App
 export class SlrClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
+  private readonly maxResponseBytes: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: SlrClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? env.SLR_API_BASE_URL).replace(/\/+$/, '');
     this.timeoutMs = options.timeoutMs ?? env.SLR_API_TIMEOUT_MS;
+    this.maxResponseBytes = options.maxResponseBytes ?? env.SLR_API_MAX_RESPONSE_BYTES;
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -64,9 +67,12 @@ export class SlrClient {
 
     let body: unknown;
     try {
-      body = await response.json();
-    } catch {
-      // Includes a body cut off by the timeout.
+      body = JSON.parse(await this.readLimited(response));
+    } catch (error) {
+      if (error instanceof AppError) throw error;
+      if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+        throw upstreamError(504, 'SLR_TIMEOUT', 'slr-be did not answer in time');
+      }
       throw upstreamError(502, 'SLR_INVALID_RESPONSE', 'slr-be returned a body that is not valid JSON');
     }
     try {
@@ -74,6 +80,29 @@ export class SlrClient {
     } catch {
       throw upstreamError(502, 'SLR_UPSTREAM_ERROR', 'slr-be reported an error');
     }
+  }
+
+  /** Reads the body as text but gives up once it passes the size limit, so a runaway upstream cannot exhaust memory. */
+  private async readLimited(response: Response): Promise<string> {
+    const declared = Number(response.headers.get('content-length'));
+    if (Number.isFinite(declared) && declared > this.maxResponseBytes) throw this.tooLarge();
+    if (!response.body) return '';
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let received = 0;
+    let text = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > this.maxResponseBytes) { await reader.cancel().catch(() => undefined); throw this.tooLarge(); }
+      text += decoder.decode(value, { stream: true });
+    }
+    return text + decoder.decode();
+  }
+
+  private tooLarge() {
+    return upstreamError(502, 'SLR_RESPONSE_TOO_LARGE', 'slr-be returned more data than allowed');
   }
 
   private async getParsed<T>(path: string, ctx: SlrRequestContext, schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }): Promise<T> {
@@ -85,6 +114,8 @@ export class SlrClient {
   /** Fetches the run, its own corpus and the MVP artifacts it contains, in the shape the importer expects. */
   async fetchRun(slrProjectId: string, runId: string, ctx: SlrRequestContext = {}): Promise<ImportInput> {
     if (!isValidRunId(runId)) throw new AppError('Invalid run id', 400, 'INVALID_RUN_ID');
+    // encodeURIComponent leaves dots alone and URL parsing resolves "." and ".." segments, which would leave the project path.
+    if (/^\.+$/.test(slrProjectId)) throw new AppError('The linked SLR project id is not valid', 400, 'INVALID_SLR_PROJECT_ID');
     const base = `/projects/${encodeURIComponent(slrProjectId)}/synthesis/artifacts/runs/${encodeURIComponent(runId)}`;
 
     const run = await this.getParsed(base, ctx, runSchema);
@@ -98,6 +129,8 @@ export class SlrClient {
 
     const artifacts: ImportInput['artifacts'] = {};
     for (const [type, payload] of fetched) {
+      const listed = run.artifacts.find((artifact) => artifact.artifact_type === type);
+      if (payload.artifact_id !== listed?.artifact_id) throw upstreamError(502, 'SLR_INVALID_RESPONSE', `slr-be returned a different ${type} than the run lists`);
       if (payload.artifact_type !== type) throw upstreamError(502, 'SLR_INVALID_RESPONSE', `slr-be returned ${payload.artifact_type} where ${type} was requested`);
       artifacts[type] = payload;
     }

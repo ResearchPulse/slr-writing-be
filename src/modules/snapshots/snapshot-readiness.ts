@@ -36,6 +36,18 @@ export function assessReadiness(input: ImportInput): ReadinessReport {
   if (corpus.research_questions.length === 0) block('NO_RESEARCH_QUESTIONS', 'The review has no research questions');
   if (corpus.studies.length === 0) block('NO_STUDIES', 'The corpus has no included studies');
 
+  // One row per artifact type is stored, so a run that lists a type twice, or a payload that is not the listed artifact, cannot be imported.
+  const listedTypes = run.artifacts.map((artifact) => artifact.artifact_type);
+  for (const type of new Set(listedTypes.filter((value, index) => listedTypes.indexOf(value) !== index))) {
+    block('DUPLICATE_ID', 'The run lists this artifact type more than once', type);
+  }
+  for (const [type, payload] of Object.entries(input.artifacts)) {
+    const listed = run.artifacts.find((artifact) => artifact.artifact_type === type);
+    if (listed && payload && payload.artifact_id !== listed.artifact_id) {
+      block('ARTIFACT_ID_MISMATCH', `The content supplied for ${type} is not the artifact listed in the run`, type);
+    }
+  }
+
   for (const type of REQUIRED_ARTIFACTS) {
     const summary = run.artifacts.find((artifact) => artifact.artifact_type === type);
     if (!summary) {
@@ -96,6 +108,9 @@ export function assessReadiness(input: ImportInput): ReadinessReport {
   for (const claim of corpus.claims) {
     if (claim.research_question_id && !rqIds.has(claim.research_question_id)) {
       block('UNKNOWN_RESEARCH_QUESTION', 'Claim points to an unknown research question', claim.claim_id);
+    }
+    for (const id of new Set(duplicates(claim.items.map((item) => item.item_id)))) {
+      block('DUPLICATE_ID', 'Duplicate claim item id', `${claim.claim_id}/${id}`);
     }
     for (const item of claim.items) {
       if (item.finding_id && !findingIds.has(item.finding_id)) {
