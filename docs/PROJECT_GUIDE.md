@@ -153,15 +153,15 @@ flowchart TD
 | Snapshot import | Hợp đồng zod, kiểm tra sẵn sàng, lưu trong transaction, idempotent theo nội dung, hash toàn vẹn |
 | API | Project + snapshot (xem [mục 8](#8-api-hiện-có)), xác thực từ chối mặc định |
 | Client `slr-be` | Lấy run + corpus của run + A1/A2/A7/A10 + PRISMA export + RQ findings; chặn redirect, timeout, giới hạn kích thước |
-| Kiểm chứng dữ liệu thật | Đã import thành công một run thật từ `slr-be`; fixture thật nằm ở `tests/fixtures/real/` |
+| Kiểm chứng dữ liệu thật | (PR #12) Đã import thành công một run thật từ `slr-be`; fixture thật nằm ở `tests/fixtures/real/` |
 | Kiểm thử | **352 test qua** (13 file), gồm 3 bộ QA độc lập do sub-agent viết trong `tests/qa/` |
 
 ### Trạng thái nhánh (lúc viết)
 
 | Nhánh | Tình trạng |
 |---|---|
-| `dev` | Có PR #9 (schema), #10 (snapshot import + API), #11 (client `slr-be`) |
-| `feat/real-data-supplements` | Commit `8736731` + `b6344c9`: kiểm chứng dữ liệu thật, PRISMA export + RQ findings, QA fix. **Chờ push + PR vào `dev`** |
+| `dev` | Có PR #9 (schema), #10 (snapshot import + API), #11 (client `slr-be`), #12 (kiểm chứng dữ liệu thật, PRISMA export + RQ findings, QA fix). Đây là trạng thái mà file này mô tả |
+| `docs/project-guide` | Chỉ chứa file này + một dòng trỏ trong `spec.md`. Chờ PR vào `dev` |
 | `main` | Chậm hơn `dev`; chưa cần gấp |
 
 ### Chưa làm (thứ tự khuyến nghị ở [mục 15](#15-lộ-trình-các-module-tiếp-theo))
