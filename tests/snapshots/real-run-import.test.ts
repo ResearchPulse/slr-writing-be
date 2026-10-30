@@ -17,6 +17,7 @@ async function setup() {
   const raw = real();
   raw.run.project_id = slrProjectId;
   raw.corpus.project_id = slrProjectId;
+  if (raw.supplements) raw.supplements.prisma_writing_export.project.id = slrProjectId;
   return { project, raw, slrProjectId };
 }
 
@@ -104,5 +105,33 @@ describe('fetching the real run through the client', () => {
     fake.serveRun(slrProjectId, raw);
     fake.json(`/api/projects/${slrProjectId}/prisma/writing-export.json`, { success: true, data: { schemaVersion: 'x' } });
     expect(await code(fetchIt(slrProjectId, raw.run.run_id))).toBe('502:SLR_INVALID_RESPONSE');
+  });
+});
+
+describe('content decides the snapshot', () => {
+  it('blocks a PRISMA export that belongs to another project', async () => {
+    const { project, raw } = await setup();
+    raw.supplements.prisma_writing_export.project.id = 'some-other-project';
+    await expect(importSnapshot({ projectId: project.id, importedBy: 'u', input: raw })).rejects.toMatchObject({ code: 'SNAPSHOT_NOT_READY' });
+  });
+
+  it('keeps one snapshot for identical content and adds another when the PRISMA export changes', async () => {
+    const { project, raw } = await setup();
+    const a = await importSnapshot({ projectId: project.id, importedBy: 'u', input: structuredClone(raw) });
+    const again = await importSnapshot({ projectId: project.id, importedBy: 'u', input: structuredClone(raw) });
+    expect(again.created).toBe(false);
+    expect(again.snapshot.id).toBe(a.snapshot.id);
+    raw.supplements.prisma_writing_export.flow.recordsScreened = 7;
+    const changed = await importSnapshot({ projectId: project.id, importedBy: 'u', input: raw });
+    expect(changed.created).toBe(true);
+    expect(changed.snapshot.id).not.toBe(a.snapshot.id);
+  });
+
+  it('marks what the service posted by hand as manual, and what it fetched itself as slr-be', async () => {
+    const { project, raw } = await setup();
+    const manual = await importSnapshot({ projectId: project.id, importedBy: 'u', input: raw });
+    expect(manual.snapshot.sourceSystem).toBe('manual');
+    const fetched = await importSnapshot({ projectId: project.id, importedBy: 'u', input: structuredClone(raw), source: 'slr-be' });
+    expect(fetched.snapshot.sourceSystem).toBe('slr-be');
   });
 });

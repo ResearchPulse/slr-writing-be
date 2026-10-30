@@ -34,7 +34,7 @@ router.post('/from-slr', async (req: AuthenticatedRequest, res, next) => {
     if (!isValidRunId(runId)) throw new BadRequestError('runId is required and must be a valid slr-be run id', 'INVALID_RUN_ID');
     const project = await getOwnedProject(req.user!.uid, req.params.projectId);
     const input = await new SlrClient().fetchRun(project.slrProjectId, runId, { authorization: req.header('authorization') });
-    const result = await importSnapshot({ projectId: project.id, importedBy: req.user!.uid, input });
+    const result = await importSnapshot({ projectId: project.id, importedBy: req.user!.uid, input, source: 'slr-be' });
     return res.status(result.created ? 201 : 200).json({
       success: true,
       data: { snapshot: result.snapshot, created: result.created, warnings: result.readiness.issues },

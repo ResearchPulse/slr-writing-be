@@ -111,7 +111,8 @@ model ReviewSnapshot {
   supplements       SnapshotSupplement[]
   provenance        ProvenanceEvent[]
 
-  @@unique([projectId, sourceRunId, corpusHash])
+  // Same run and corpus but different content (for example a changed PRISMA export), or a different source (fetched vs posted by hand), is a different snapshot.
+  @@unique([projectId, sourceSystem, sourceRunId, corpusHash, integrityHash])
   @@index([projectId])
 }
 

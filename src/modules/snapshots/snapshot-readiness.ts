@@ -125,8 +125,23 @@ export function assessReadiness(input: ImportInput): ReadinessReport {
   // Methods needs the PRISMA flow, which slr-be keeps outside the run. Compare it with the frozen corpus to catch a moved project.
   const prisma = input.supplements?.prisma_writing_export;
   if (!prisma) warn('PRISMA_EXPORT_MISSING', 'The PRISMA writing export was not supplied, so the Methods section has no flow counts');
-  else if ((prisma.flow.studiesIncluded ?? prisma.includedStudies.length) !== corpus.studies.length) {
-    warn('PRISMA_COUNT_MISMATCH', `The PRISMA export counts ${prisma.flow.studiesIncluded ?? prisma.includedStudies.length} included studies but the run corpus has ${corpus.studies.length}`);
+  else {
+    // Numbers from another project would be written into Methods as if they were this review's.
+    if (prisma.project && prisma.project.id !== run.project_id) {
+      block('PRISMA_PROJECT_MISMATCH', 'The PRISMA export belongs to a different SLR project than the run', prisma.project.id);
+    }
+    const listed = prisma.includedStudies.map((study) => study.id);
+    const counted = prisma.flow.studiesIncluded ?? listed.length;
+    if (counted !== corpus.studies.length) {
+      warn('PRISMA_COUNT_MISMATCH', `The PRISMA export counts ${counted} included studies but the run corpus has ${corpus.studies.length}`);
+    }
+    if (prisma.flow.studiesIncluded !== null && prisma.flow.studiesIncluded !== listed.length) {
+      warn('PRISMA_LIST_MISMATCH', `The PRISMA flow says ${prisma.flow.studiesIncluded} included studies but lists ${listed.length}`);
+    }
+    for (const id of new Set(listed.filter((value, index) => listed.indexOf(value) !== index))) warn('PRISMA_DUPLICATE_STUDY', 'The PRISMA export lists a study twice', id);
+    for (const id of new Set(listed)) {
+      if (!studyIds.has(id)) warn('PRISMA_UNKNOWN_STUDY', 'The PRISMA export lists a study that is not in the run corpus', id);
+    }
   }
 
   // A review without full-text evidence can still support Methods, but nothing can be quoted or cited at passage level.

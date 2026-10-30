@@ -115,8 +115,10 @@ export const artifactPayloadSchema = z.object({
  */
 export const prismaWritingExportSchema = z.object({
   schemaVersion: z.string().min(1),
+  /** Present in the real export. When it names a project, it must be the one the run belongs to. */
+  project: z.object({ id: z.string().min(1) }).passthrough().optional(),
   flow: z.object({
-    studiesIncluded: z.number().int().nullable(),
+    studiesIncluded: z.number().int().nonnegative().nullable(),
   }).passthrough(),
   includedStudies: z.array(z.object({ id: z.string().min(1) }).passthrough()),
 }).passthrough();

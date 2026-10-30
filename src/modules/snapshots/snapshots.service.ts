@@ -18,6 +18,7 @@ export async function getSnapshot(projectId: string, snapshotId: string) {
       issues: true,
       integrityHash: true,
       artifacts: { select: { artifactType: true, artifactId: true, contentHash: true, reviewStatus: true, validationStatus: true } },
+      supplements: { select: { kind: true, schemaVersion: true, contentHash: true } },
       _count: { select: { researchQuestions: true, studies: true, documents: true, findings: true, evidence: true, claims: true } },
     },
   });
