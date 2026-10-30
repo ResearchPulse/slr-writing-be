@@ -122,6 +122,18 @@ export function assessReadiness(input: ImportInput): ReadinessReport {
     }
   }
 
+  // Methods needs the PRISMA flow, which slr-be keeps outside the run. Compare it with the frozen corpus to catch a moved project.
+  const prisma = input.supplements?.prisma_writing_export;
+  if (!prisma) warn('PRISMA_EXPORT_MISSING', 'The PRISMA writing export was not supplied, so the Methods section has no flow counts');
+  else if ((prisma.flow.studiesIncluded ?? prisma.includedStudies.length) !== corpus.studies.length) {
+    warn('PRISMA_COUNT_MISMATCH', `The PRISMA export counts ${prisma.flow.studiesIncluded ?? prisma.includedStudies.length} included studies but the run corpus has ${corpus.studies.length}`);
+  }
+
+  // A review without full-text evidence can still support Methods, but nothing can be quoted or cited at passage level.
+  // Seen on real slr-be data: studies imported without full text give 0 documents and 0 evidence, and the run is otherwise valid.
+  if (corpus.evidence.length === 0) warn('NO_EVIDENCE', 'The corpus has no evidence quotes, so findings cannot be traced to a passage in the source');
+  if (corpus.claims.length === 0) warn('NO_CLAIMS', 'The corpus has no synthesis themes, so the Results section has nothing to build on');
+
   // Quality of the evidence base: worth showing to the user, not worth blocking on.
   for (const study of corpus.studies) {
     if (study.extraction.status !== 'COMPLETED') warn('EXTRACTION_INCOMPLETE', 'Data extraction is not completed for this study', study.study_id);

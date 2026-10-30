@@ -36,11 +36,13 @@ export class FakeSlrBe {
   redirect(path: string, to: string) { this.on(path, (_req, res) => { res.statusCode = 302; res.setHeader('location', to); res.end(); }); }
 
   /** Serves a whole synthetic run under the slr-be routes. `wrap` chooses the envelope style. */
-  serveRun(slrProjectId: string, input: { run: any; corpus: any; artifacts: Record<string, unknown> }, wrap: (data: unknown) => unknown = (data) => ({ success: true, isSuccess: true, data, message: 'ok' })) {
+  serveRun(slrProjectId: string, input: { run: any; corpus: any; artifacts: Record<string, unknown>; supplements?: { prisma_writing_export?: unknown; rq_findings?: unknown } }, wrap: (data: unknown) => unknown = (data) => ({ success: true, isSuccess: true, data, message: 'ok' })) {
     const base = `/api/projects/${slrProjectId}/synthesis/artifacts/runs/${input.run.run_id}`;
     this.json(base, wrap(input.run));
     this.json(`${base}/artifacts/corpus`, wrap(input.corpus));
     for (const [type, payload] of Object.entries(input.artifacts)) this.json(`${base}/artifacts/${type}`, wrap(payload));
+    if (input.supplements?.prisma_writing_export) this.json(`/api/projects/${slrProjectId}/prisma/writing-export.json`, wrap(input.supplements.prisma_writing_export));
+    if (input.supplements?.rq_findings) this.json(`/api/projects/${slrProjectId}/synthesis/findings`, wrap(input.supplements.rq_findings));
     return base;
   }
 }

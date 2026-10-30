@@ -28,7 +28,7 @@ describe('SlrClient.fetchRun', () => {
     expect(input.run.run_id).toBe(RUN);
     expect(input.corpus.studies).toHaveLength(2);
     expect(Object.keys(input.artifacts).sort()).toEqual(['A1', 'A10', 'A2', 'A7']);
-    expect(fake.requests).toHaveLength(6); // run + corpus + 4 artifacts
+    expect(fake.requests).toHaveLength(8); // run + corpus + 4 artifacts + 2 optional supplements (404 here)
     expect(fake.requests.every((r) => r.authorization === 'Bearer user-token')).toBe(true);
     expect(fake.requests.every((r) => r.method === 'GET')).toBe(true);
   });

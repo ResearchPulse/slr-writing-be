@@ -1,8 +1,8 @@
 import { env } from '../../config/env.js';
 import { AppError } from '../../shared/errors/app-error.js';
 import {
-  artifactPayloadSchema, corpusSchema, runSchema, unwrapEnvelope,
-  type ArtifactTypeName, type ImportInput,
+  artifactPayloadSchema, corpusSchema, prismaWritingExportSchema, rqFindingsSchema, runSchema, unwrapEnvelope,
+  type ArtifactTypeName, type ImportInput, type Supplements,
 } from '../snapshots/slr-source.schemas.js';
 
 /** Artifacts the MVP writes from (docs/mvp-scope.md). Others are not fetched. */
@@ -111,6 +111,16 @@ export class SlrClient {
     return parsed.data;
   }
 
+  /** Like getParsed, but a project that has no such data (404) gives undefined. Every other failure still fails the import. */
+  private async getOptional<T>(path: string, ctx: SlrRequestContext, schema: { safeParse(value: unknown): { success: true; data: T } | { success: false } }): Promise<T | undefined> {
+    try {
+      return await this.getParsed(path, ctx, schema);
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'SLR_NOT_FOUND') return undefined;
+      throw error;
+    }
+  }
+
   /** Fetches the run, its own corpus and the MVP artifacts it contains, in the shape the importer expects. */
   async fetchRun(slrProjectId: string, runId: string, ctx: SlrRequestContext = {}): Promise<ImportInput> {
     if (!isValidRunId(runId)) throw new AppError('Invalid run id', 400, 'INVALID_RUN_ID');
@@ -134,6 +144,12 @@ export class SlrClient {
       if (payload.artifact_type !== type) throw upstreamError(502, 'SLR_INVALID_RESPONSE', `slr-be returned ${payload.artifact_type} where ${type} was requested`);
       artifacts[type] = payload;
     }
-    return { run, corpus, artifacts };
+
+    const supplements: Supplements = {};
+    const prismaExport = await this.getOptional(`/projects/${encodeURIComponent(slrProjectId)}/prisma/writing-export.json`, ctx, prismaWritingExportSchema);
+    if (prismaExport) supplements.prisma_writing_export = prismaExport;
+    const findings = await this.getOptional(`/projects/${encodeURIComponent(slrProjectId)}/synthesis/findings`, ctx, rqFindingsSchema);
+    if (findings) supplements.rq_findings = findings;
+    return { run, corpus, artifacts, supplements };
   }
 }

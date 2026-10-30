@@ -47,7 +47,7 @@ describe('QA: slrProjectId encoding', () => {
     fake.serveRun(encodeURIComponent(pid), buildSyntheticRun());
     await fetchRun(client(), RUN, auth, pid).catch(() => undefined);
     expect(fake.requests.length).toBeGreaterThan(0);
-    for (const r of fake.requests) expect(r.url.startsWith(`/api/projects/${encodeURIComponent(pid)}/synthesis/artifacts/runs/${RUN}`)).toBe(true);
+    for (const r of fake.requests) expect(r.url.startsWith(`/api/projects/${encodeURIComponent(pid)}/`), r.url).toBe(true);
   });
 
   it.each(['..', '.', '...'])('dot-segment slrProjectId %j is rejected before any request is made', async (pid) => {
@@ -252,13 +252,13 @@ describe('QA: consistency', () => {
     expect(fake.requests.filter((r) => r.url.endsWith('/artifacts/A1'))).toHaveLength(1);
   });
 
-  it('run with no MVP artifacts fetches only run + corpus', async () => {
+  it('run with no MVP artifacts fetches only run, corpus and the two optional supplements', async () => {
     const input = buildSyntheticRun() as any;
     input.run.artifacts = [];
     fake.serveRun(PROJECT, input);
     const r = await fetchRun();
     expect(r.artifacts).toEqual({});
-    expect(fake.requests).toHaveLength(2);
+    expect(fake.requests).toHaveLength(4);
   });
 
   it('artifact payload with a mismatching artifact_type is rejected', async () => {

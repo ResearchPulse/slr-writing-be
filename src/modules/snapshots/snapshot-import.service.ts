@@ -32,8 +32,14 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
+/** Supplements join the hash only when present, so a snapshot without them keeps the hash it had before they existed. */
+const hashedContent = (input: ImportInput) =>
+  Object.keys(input.supplements).length === 0
+    ? { corpus: input.corpus, artifacts: input.artifacts }
+    : { corpus: input.corpus, artifacts: input.artifacts, supplements: input.supplements };
+
 export const computeIntegrityHash = (input: ImportInput): string =>
-  `sha256:${createHash('sha256').update(stableStringify({ corpus: input.corpus, artifacts: input.artifacts })).digest('hex')}`;
+  `sha256:${createHash('sha256').update(stableStringify(hashedContent(input))).digest('hex')}`;
 
 function parseInput(raw: unknown): ImportInput {
   const parsed = importInputSchema.safeParse(raw);
@@ -198,6 +204,13 @@ async function store(
         reviewStatus: summary.review_status, validationStatus: summary.validation_status, payload: json(payload),
       }];
     }),
+  });
+
+  await tx.snapshotSupplement.createMany({
+    data: Object.entries(input.supplements).flatMap(([kind, payload]) => payload === undefined ? [] : [{
+      snapshotId, kind, schemaVersion: (payload as { schemaVersion?: string }).schemaVersion ?? null,
+      contentHash: `sha256:${createHash('sha256').update(stableStringify(payload)).digest('hex')}`, payload: json(payload),
+    }]),
   });
 
   await tx.provenanceEvent.create({
