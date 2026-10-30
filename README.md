@@ -28,15 +28,13 @@ Thiết kế chi tiết nằm trong tài liệu `SLR_AI_Writing_Implementation_R
 | Thành phần | Công nghệ |
 |---|---|
 | Runtime | Node.js 22, TypeScript (ESM, NodeNext) |
-| Web framework | Express 5 |
+| Web framework | Express 4 (cùng phiên bản với `slr-be`) |
 | Tài liệu API | Swagger UI (`swagger-ui-express`, OpenAPI 3) |
 | Validate | zod 3 |
 | Log | pino (tự che các trường nhạy cảm) |
 | Test | vitest, supertest |
 
 Chưa chốt: cơ sở dữ liệu (PostgreSQL hay Firestore), nhà cung cấp LLM, hàng đợi job.
-
-Lưu ý: `slr-be` dùng Express 4, repo này dùng Express 5. Khi chép code từ `slr-be` sang cần chú ý khác biệt (ví dụ cú pháp wildcard của route).
 
 ## Cài đặt và chạy
 
