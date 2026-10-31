@@ -1,9 +1,11 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { createLogger } from './config/logger.js';
+import { configureAuth } from './modules/auth/auth.setup.js';
 
 const logger = createLogger('SERVER');
 
+configureAuth();
 const app = createApp();
 
 const server = app.listen(env.PORT, () => {
