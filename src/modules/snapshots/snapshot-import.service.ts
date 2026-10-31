@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Prisma, type ReviewSnapshot } from '../../generated/prisma/client.js';
 import { prisma } from '../../config/prisma.js';
 import { AppError, BadRequestError, NotFoundError } from '../../shared/errors/app-error.js';
+import { hasUnstorableText } from '../../shared/utils/storable.js';
 import { assessReadiness, type ReadinessReport } from './snapshot-readiness.js';
 import { importInputSchema, type ImportInput } from './slr-source.schemas.js';
 
@@ -42,14 +43,12 @@ export const computeIntegrityHash = (input: ImportInput): string =>
   `sha256:${createHash('sha256').update(stableStringify(hashedContent(input))).digest('hex')}`;
 
 const MAX_DEPTH = 64;
-// A NUL or a lone surrogate cannot be stored in PostgreSQL JSON/text and would fail the whole transaction with a 500.
-const UNSTORABLE = /\u0000|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
 /** Rejects input that is nested too deeply or holds text the database cannot store, before anything is parsed or hashed. */
 function assertStorable(value: unknown, depth = 0): void {
   if (depth > MAX_DEPTH) throw new BadRequestError('Invalid import payload: nested too deeply', 'INVALID_IMPORT_INPUT');
   if (typeof value === 'string') {
-    if (UNSTORABLE.test(value)) throw new BadRequestError('Invalid import payload: contains a character that cannot be stored', 'INVALID_IMPORT_INPUT');
+    if (hasUnstorableText(value)) throw new BadRequestError('Invalid import payload: contains a character that cannot be stored', 'INVALID_IMPORT_INPUT');
   } else if (Array.isArray(value)) {
     for (const item of value) assertStorable(item, depth + 1);
   } else if (value && typeof value === 'object') {

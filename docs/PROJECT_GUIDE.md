@@ -166,7 +166,7 @@ flowchart TD
 
 ### Chưa làm (thứ tự khuyến nghị ở [mục 15](#15-lộ-trình-các-module-tiếp-theo))
 
-Xác thực Firebase thật · kiểm tra quyền khi liên kết project · bộ sinh Methods/PRISMA · Journal Profile · `LLMProvider` · outline + H1 · ParagraphPlan · sinh văn bản + H2 · citation manifest + verification + gate · export + H3 · giao diện · rate limit/siết bảo mật cho production · trigger bất biến cho bảng con.
+Thử xác thực với token Firebase thật · kiểm tra vai trò OWNER cho H1–H3 · bộ sinh Methods/PRISMA · Journal Profile · `LLMProvider` · outline + H1 · ParagraphPlan · sinh văn bản + H2 · citation manifest + verification + gate · export + H3 · giao diện · siết bảo mật còn lại cho production (CSP, Swagger, `x-request-id`) · trigger bất biến cho bảng con.
 
 ---
 
@@ -300,7 +300,7 @@ Mọi route cần xác thực. Project/snapshot của người khác luôn trả
 |---|---|
 | Xác thực | `UNAUTHORIZED` (401), `INVALID_TOKEN` (401) |
 | Đầu vào | `VALIDATION_ERROR`, `INVALID_JSON`, `PAYLOAD_TOO_LARGE` (413), `INVALID_RUN_ID`, `INVALID_SLR_PROJECT_ID`, `INVALID_IMPORT_INPUT`, `RUN_PROJECT_MISMATCH` (400) |
-| Nghiệp vụ | `PROJECT_EXISTS` (409), `PROJECT_NOT_FOUND`, `SNAPSHOT_NOT_FOUND` (404), `SNAPSHOT_NOT_READY` (422, `details` = báo cáo) |
+| Nghiệp vụ | `PROJECT_EXISTS` (409), `PROJECT_NOT_FOUND`, `SNAPSHOT_NOT_FOUND` (404), `SNAPSHOT_NOT_READY` (422, `details` = báo cáo), `SLR_PROJECT_ACCESS_DENIED` (403, người gọi không đọc được SLR project trên `slr-be`; project không tồn tại cũng trả mã này), `MANUAL_IMPORT_DISABLED` (403), `RATE_LIMITED` (429) |
 | Upstream `slr-be` | `SLR_AUTH_REJECTED` (401), `SLR_FORBIDDEN` (403), `SLR_NOT_FOUND` (404), `SLR_UPSTREAM_ERROR`, `SLR_INVALID_RESPONSE`, `SLR_RESPONSE_TOO_LARGE`, `SLR_UNREACHABLE` (502), `SLR_TIMEOUT` (504) |
 | Khác | `INTERNAL_SERVER_ERROR` (500) |
 
@@ -387,13 +387,22 @@ Sau đó (bằng API với token `dev-leader_user`): `POST synthesis/start` → 
 - Dev auth chỉ khi `DEV_AUTH_ENABLED=true` **và** `NODE_ENV != production`: danh tính là `DEV_AUTH_UID`, hoặc header `X-Dev-User-Id`. Khi dev auth bật và chưa có verifier, header `Authorization` vẫn được chuyển tiếp nguyên cho `slr-be` (cách thử với `Bearer dev-leader_user`).
 - Quyền: người gọi phải sở hữu `Project` (so `ownerId`).
 
-**Cần làm** (module M1, [mục 15](#15-lộ-trình-các-module-tiếp-theo)): đăng ký verifier dùng `firebase-admin` `verifyIdToken(token, true)` với project Firebase chung; kiểm tra quyền trên `slr-be` khi liên kết project; rate limit.
+**Đã làm ở M1** (nhánh `feat/firebase-auth`):
+
+- `src/modules/auth/firebase-verifier.ts`: xác minh ID token bằng `firebase-admin` (chữ ký, issuer, audience, hạn dùng), kiểm tra lại `aud` đúng bằng project id và bắt buộc có `aud`, giới hạn thời gian chờ 10 s, không bao giờ ném lỗi hay lộ lý do. Đăng ký lúc khởi động trong `server.ts` qua `configureAuth()` khi có `FIREBASE_PROJECT_ID`.
+- `parseEnv` (`src/config/env.ts`): production (hoặc thiếu `NODE_ENV`) mà thiếu `FIREBASE_PROJECT_ID` thì **không khởi động**; `FIREBASE_PROJECT_ID` đặt cùng `DEV_AUTH_ENABLED=true` cũng không khởi động (nếu không, ai không có token vẫn đóng giả được bằng `X-Dev-User-Id`). Giá trị rỗng coi như chưa đặt.
+- Liên kết project: `POST /projects` hỏi `slr-be` (`GET /api/projects/:id` bằng token người gọi). Không có quyền hoặc project không tồn tại đều trả cùng một câu 403 `SLR_PROJECT_ACCESS_DENIED` để không dò được ID. Kiểm tra này chạy trước kiểm tra trùng.
+- Import tay `POST /snapshots` trả 403 `MANUAL_IMPORT_DISABLED` khi `ALLOW_MANUAL_SNAPSHOT_IMPORT` tắt (mặc định tắt ở production). `validate` và xem danh sách vẫn dùng được.
+- `POST /snapshots/from-slr` giới hạn theo người dùng (`FROM_SLR_RATE_LIMIT_PER_MINUTE`, mặc định 20/phút) → 429 `RATE_LIMITED`. Đếm trong bộ nhớ của một tiến trình.
+- Tên và `slrProjectId` chứa NUL hoặc surrogate lẻ bị từ chối 400 thay vì lỗi 500 từ database.
+
+**Còn lại của xác thực:** chưa thử với token Firebase thật (cần FE đăng nhập); `FIREBASE_CHECK_REVOKED` cần thông tin service account; chưa có kiểm tra vai trò OWNER trên `slr-be` cho H1–H3 (hiện chỉ kiểm tra là thành viên khi liên kết).
 
 **Lỗ hổng đã biết (ưu tiên cao):**
 
-1. `POST /projects` nhận `slrProjectId` tuỳ ý mà không hỏi `slr-be` người dùng có thuộc project đó không. Lỗi chỉ lộ muộn khi `from-slr` bị `slr-be` trả 403.
-2. Import tay cho phép lưu dữ liệu tự bịa (đã gắn nhãn `manual`, nhưng cần tắt hoặc hạn chế ở production).
-3. Không có rate limit; `from-slr` gọi 6–8 request lên `slr-be` mỗi lần.
+1. ~~Liên kết project không kiểm tra quyền~~ → đã xử lý ở M1.
+2. ~~Import tay lưu dữ liệu tự bịa~~ → đã gắn nhãn `manual` và tắt mặc định ở production.
+3. ~~Không có rate limit~~ → đã có cho `from-slr` (đếm trong bộ nhớ, một tiến trình).
 4. Swagger công khai ở production; `helmet` đang tắt CSP; `x-request-id` từ client chưa được làm sạch; `FRONTEND_URL` chưa kiểm tra.
 5. Dòng con của snapshot (kể cả `SnapshotSupplement`, `SnapshotArtifact`) vẫn UPDATE được ở mức DB; "bất biến" hiện do tầng service giữ.
 
@@ -423,7 +432,12 @@ npm run dev                 # http://localhost:5100  (Swagger: /api-docs)
 | `SLR_API_BASE_URL` | `http://localhost:5000` | Gốc của `slr-be` |
 | `SLR_API_TIMEOUT_MS` | 15000 | Timeout mỗi request lên `slr-be` |
 | `SLR_API_MAX_RESPONSE_BYTES` | 52428800 | Giới hạn phản hồi từ `slr-be` |
-| `DEV_AUTH_ENABLED` | `false` | Chỉ có tác dụng khi không phải production |
+| `DEV_AUTH_ENABLED` | `false` | Chỉ có tác dụng khi không phải production; **không được bật cùng `FIREBASE_PROJECT_ID`** |
+| `FIREBASE_PROJECT_ID` | (trống) | Project Firebase phát token, dùng chung với `slr-be`. **Bắt buộc ở production**; trống = chỉ dev auth |
+| `FIREBASE_CHECK_REVOKED` | `false` | Từ chối cả token bị thu hồi; cần service account |
+| `SLR_VERIFY_PROJECT_ACCESS` | `true` | Hỏi `slr-be` về quyền khi liên kết project |
+| `ALLOW_MANUAL_SNAPSHOT_IMPORT` | `true` ngoài production, `false` ở production | Cho phép import tay |
+| `FROM_SLR_RATE_LIMIT_PER_MINUTE` | 20 | Số lần gọi `from-slr` mỗi người mỗi phút |
 | `JSON_BODY_LIMIT` | `50mb` | Corpus lớn |
 
 ### Test
@@ -515,7 +529,7 @@ flowchart TD
 
 > Các tên bảng/endpoint dưới đây là **đề xuất**; hãy bám roadmap mục 4–6 và ghi quyết định mới vào ADR.
 
-### M1 — Xác thực Firebase thật
+### M1 — Xác thực Firebase thật (**đã code, chờ merge**; xem mục 11)
 - **Mục tiêu:** thay dev auth bằng danh tính thật; ngăn liên kết project không có quyền.
 - **Việc:** `firebase-admin`, verifier `verifyIdToken(token, checkRevoked=true)` với `FIREBASE_PROJECT_ID` lấy từ env (bắt buộc ở production, rỗng thì không khởi động); đăng ký bằng `setTokenVerifier` lúc khởi động. Khi `POST /projects`: gọi `GET /api/projects/:slrProjectId` trên `slr-be` bằng token người dùng, yêu cầu tối thiểu vai trò MEMBER (OWNER nếu muốn duyệt H1–H3).
 - **Hạn chế cần xử lý:** import tay → tắt ở production hoặc chỉ cho phép khi cờ cấu hình bật; rate limit cho `from-slr`.

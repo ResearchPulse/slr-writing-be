@@ -121,11 +121,31 @@ export class SlrClient {
     }
   }
 
+  /**
+   * Resolves only when slr-be lets the caller read this SLR project (any member). The answer for a project that
+   * does not exist and for one the caller cannot see is the same, so this cannot be used to probe for project ids.
+   */
+  async assertProjectAccess(slrProjectId: string, ctx: SlrRequestContext = {}): Promise<void> {
+    this.assertSafeProjectId(slrProjectId);
+    try {
+      await this.get(`/projects/${encodeURIComponent(slrProjectId)}`, ctx);
+    } catch (error) {
+      if (error instanceof AppError && (error.code === 'SLR_FORBIDDEN' || error.code === 'SLR_NOT_FOUND')) {
+        throw new AppError('You do not have access to this SLR project', 403, 'SLR_PROJECT_ACCESS_DENIED');
+      }
+      throw error;
+    }
+  }
+
+  // encodeURIComponent leaves dots alone and URL parsing resolves "." and ".." segments, which would leave the project path.
+  private assertSafeProjectId(slrProjectId: string): void {
+    if (/^\.+$/.test(slrProjectId)) throw new AppError('The linked SLR project id is not valid', 400, 'INVALID_SLR_PROJECT_ID');
+  }
+
   /** Fetches the run, its own corpus and the MVP artifacts it contains, in the shape the importer expects. */
   async fetchRun(slrProjectId: string, runId: string, ctx: SlrRequestContext = {}): Promise<ImportInput> {
     if (!isValidRunId(runId)) throw new AppError('Invalid run id', 400, 'INVALID_RUN_ID');
-    // encodeURIComponent leaves dots alone and URL parsing resolves "." and ".." segments, which would leave the project path.
-    if (/^\.+$/.test(slrProjectId)) throw new AppError('The linked SLR project id is not valid', 400, 'INVALID_SLR_PROJECT_ID');
+    this.assertSafeProjectId(slrProjectId);
     const base = `/projects/${encodeURIComponent(slrProjectId)}/synthesis/artifacts/runs/${encodeURIComponent(runId)}`;
 
     const run = await this.getParsed(base, ctx, runSchema);
