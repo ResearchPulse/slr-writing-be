@@ -21,7 +21,8 @@ const envSchema = z.object({
   DEV_AUTH_UID: z.string().default('dev_user'),
   DEV_AUTH_EMAIL: z.string().default('dev@slr-writing.local'),
   // Firebase project that issues the ID tokens (shared with slr-be). Required in production: without it every request is rejected.
-  FIREBASE_PROJECT_ID: z.string().trim().min(1).optional(),
+  // A blank value (a bare `FIREBASE_PROJECT_ID=` line) counts as not set.
+  FIREBASE_PROJECT_ID: z.preprocess((value) => (typeof value === 'string' && value.trim() === '' ? undefined : value), z.string().trim().min(1).optional()),
   // Also reject tokens that were revoked. This asks Firebase Auth, which needs service-account credentials in the environment.
   FIREBASE_CHECK_REVOKED: booleanEnv(false),
   // When on, creating a project asks slr-be whether the caller belongs to the SLR project being linked.
@@ -39,6 +40,10 @@ export function parseEnv(source: NodeJS.ProcessEnv) {
   // Fail closed: a production server that cannot verify tokens would reject everything, so refuse to start instead.
   if (parsed.NODE_ENV === 'production' && !parsed.FIREBASE_PROJECT_ID) {
     throw new Error('FIREBASE_PROJECT_ID is required when NODE_ENV=production');
+  }
+  // With a verifier configured, dev auth would let anyone without a token act as any user through X-Dev-User-Id.
+  if (parsed.FIREBASE_PROJECT_ID && parsed.DEV_AUTH_ENABLED) {
+    throw new Error('DEV_AUTH_ENABLED cannot be true while FIREBASE_PROJECT_ID is set; use one or the other');
   }
   return {
     ...parsed,

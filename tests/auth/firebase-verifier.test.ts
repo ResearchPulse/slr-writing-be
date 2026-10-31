@@ -93,3 +93,22 @@ describe('API with the Firebase verifier', () => {
     expect(created.body.data.ownerId).toBe('firebase-user');
   });
 });
+
+describe('createFirebaseVerifier strictness', () => {
+  it('rejects a decoded token that has no audience', async () => {
+    expect(await make(async () => ({ uid: 'u' }))('t')).toBeNull();
+  });
+
+  it('keeps only a string email', async () => {
+    for (const email of [42, true, [], {}, ''] as unknown[]) {
+      expect(await make(async () => ({ uid: 'u', aud: PROJECT, email: email as string }))('t')).toEqual({ uid: 'u' });
+    }
+  });
+
+  it('treats a verification that never finishes as invalid instead of hanging the request', async () => {
+    const verifier = createFirebaseVerifier({ projectId: PROJECT, timeoutMs: 50, verify: () => new Promise(() => undefined) });
+    const started = Date.now();
+    expect(await verifier('t')).toBeNull();
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+});

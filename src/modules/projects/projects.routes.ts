@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { env } from '../../config/env.js';
 import { requireAuth } from '../../middleware/auth.middleware.js';
+import { hasUnstorableText } from '../../shared/utils/storable.js';
 import { SlrClient } from '../slr-client/slr-client.js';
 import { validate } from '../../middleware/validation.middleware.js';
 import type { AuthenticatedRequest } from '../../shared/types/common.types.js';
@@ -13,9 +14,11 @@ router.use(requireAuth);
 
 const createSchema = z.object({
   body: z.object({
-    name: z.string().trim().min(1).max(200),
-    // "." and ".." would be resolved as path segments when used in a URL.
-    slrProjectId: z.string().trim().min(1).max(200).refine((value) => !/^\.+$/.test(value), 'Invalid SLR project id'),
+    name: z.string().trim().min(1).max(200).refine((value) => !hasUnstorableText(value), 'Contains a character that cannot be stored'),
+    slrProjectId: z.string().trim().min(1).max(200)
+      // "." and ".." would be resolved as path segments when used in a URL.
+      .refine((value) => !/^\.+$/.test(value), 'Invalid SLR project id')
+      .refine((value) => !hasUnstorableText(value), 'Contains a character that cannot be stored'),
   }),
 });
 

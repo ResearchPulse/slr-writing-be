@@ -52,3 +52,17 @@ describe('parseEnv production rules', () => {
     expect(() => parseEnv({ NODE_ENV: 'development', FROM_SLR_RATE_LIMIT_PER_MINUTE: '-5' })).toThrow();
   });
 });
+
+describe('settings that cannot be combined or are left blank', () => {
+  it('refuses dev auth together with a Firebase project id, in every environment', () => {
+    for (const NODE_ENV of ['development', 'test', 'production']) {
+      expect(() => parseEnv({ NODE_ENV, FIREBASE_PROJECT_ID: 'p', DEV_AUTH_ENABLED: 'true' })).toThrow(/DEV_AUTH_ENABLED/);
+    }
+  });
+
+  it('treats a blank FIREBASE_PROJECT_ID as not set outside production, and still refuses to start in production', () => {
+    expect(parseEnv({ NODE_ENV: 'development', FIREBASE_PROJECT_ID: '' }).FIREBASE_PROJECT_ID).toBeUndefined();
+    expect(parseEnv({ NODE_ENV: 'development', FIREBASE_PROJECT_ID: '   ' }).FIREBASE_PROJECT_ID).toBeUndefined();
+    expect(() => parseEnv({ NODE_ENV: 'production', FIREBASE_PROJECT_ID: '' })).toThrow(/FIREBASE_PROJECT_ID/);
+  });
+});
