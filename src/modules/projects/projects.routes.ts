@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { env } from '../../config/env.js';
 import { requireAuth } from '../../middleware/auth.middleware.js';
+import { SlrClient } from '../slr-client/slr-client.js';
 import { validate } from '../../middleware/validation.middleware.js';
 import type { AuthenticatedRequest } from '../../shared/types/common.types.js';
 import snapshotRoutes from '../snapshots/snapshots.routes.js';
@@ -19,6 +21,10 @@ const createSchema = z.object({
 
 router.post('/', validate(createSchema), async (req: AuthenticatedRequest, res, next) => {
   try {
+    // Linking is only allowed to an SLR project the caller can read on slr-be, using the caller's own token.
+    if (env.SLR_VERIFY_PROJECT_ACCESS) {
+      await new SlrClient().assertProjectAccess(req.body.slrProjectId, { authorization: req.header('authorization') });
+    }
     const project = await createProject(req.user!.uid, req.body);
     return res.status(201).json({ success: true, data: project });
   } catch (error) { return next(error); }

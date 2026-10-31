@@ -1,6 +1,8 @@
 import { Router, type Request } from 'express';
 import type { AuthenticatedRequest } from '../../shared/types/common.types.js';
-import { BadRequestError } from '../../shared/errors/app-error.js';
+import { env } from '../../config/env.js';
+import { createUserRateLimiter } from '../../middleware/rate-limit.middleware.js';
+import { BadRequestError, ForbiddenError } from '../../shared/errors/app-error.js';
 import { getOwnedProject } from '../projects/projects.service.js';
 import { SlrClient, isValidRunId } from '../slr-client/slr-client.js';
 import { importSnapshot, validateImport } from './snapshot-import.service.js';
@@ -28,7 +30,10 @@ router.post('/validate', (req, res, next) => {
 });
 
 // Pull a run straight from slr-be with the caller's own token, then import it like any other run.
-router.post('/from-slr', async (req: AuthenticatedRequest, res, next) => {
+// Each call fans out to several requests on slr-be, so it is limited per user.
+const fromSlrLimiter = createUserRateLimiter();
+
+router.post('/from-slr', fromSlrLimiter, async (req: AuthenticatedRequest, res, next) => {
   try {
     const runId: unknown = req.body?.runId;
     if (!isValidRunId(runId)) throw new BadRequestError('runId is required and must be a valid slr-be run id', 'INVALID_RUN_ID');
@@ -45,6 +50,10 @@ router.post('/from-slr', async (req: AuthenticatedRequest, res, next) => {
 // Import a run. 201 for a new snapshot, 200 when the same run and corpus hash were imported before.
 router.post('/', async (req: AuthenticatedRequest, res, next) => {
   try {
+    // A body posted by the client is not backed by slr-be, so production refuses it unless it is switched on.
+    if (!env.ALLOW_MANUAL_SNAPSHOT_IMPORT) {
+      throw new ForbiddenError('Importing a run by hand is disabled; use /snapshots/from-slr', 'MANUAL_IMPORT_DISABLED');
+    }
     const result = await importSnapshot({ projectId: req.params.projectId, importedBy: req.user!.uid, input: req.body });
     return res.status(result.created ? 201 : 200).json({
       success: true,
